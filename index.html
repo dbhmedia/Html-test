@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Double View Camera with Advanced Voice Control and Edge Detection</title>
+  <style>
+    /* (Same CSS as before) */
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: black;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+    #videoContainer {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: row;
+      justify-content: center;
+      align-items: center;
+    }
+    video, canvas {
+      position: absolute;
+      width: 50%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #video1, #canvas1 {
+      left: 0;
+    }
+    #video2, #canvas2 {
+      right: 0;
+    }
+    /* Menu styles */
+    #menu {
+      position: absolute;
+      top: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 10px;
+      border-radius: 10px;
+      display: none;
+      color: white;
+      z-index: 2;
+    }
+    #menu h2 {
+      margin-top: 0;
+    }
+    .sliderContainer {
+      margin: 10px 0;
+    }
+    .sliderLabel {
+      margin-bottom: 5px;
+    }
+    .slider {
+      width: 100%;
+    }
+    .valueDisplay {
+      color: #fff;
+      font-size: 14px;
+      margin-left: 10px;
+    }
+    /* Button styles */
+    .button {
+      background-color: #444;
+      color: white;
+      padding: 10px;
+      margin: 10px 0;
+      border: none;
+      border-radius: 5px;
+      width: 100%;
+      font-size: 16px;
+    }
+    /* Full-screen toggle overlay */
+    #fullscreenOverlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    /* Camera label overlay */
+    #cameraLabel {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 5px 10px;
+      border-radius: 5px;
+      z-index: 3;
+      font-size: 16px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="videoContainer">
+    <video id="video1" autoplay playsinline></video>
+    <video id="video2" autoplay playsinline></video>
+    <canvas id="canvas1"></canvas>
+    <canvas id="canvas2"></canvas>
+  </div>
+
+  <!-- Full-screen toggle overlay -->
+  <div id="fullscreenOverlay"></div>
+
+  <!-- Camera label overlay -->
+  <div id="cameraLabel">Cam 3</div>
+
+  <!-- Menu for adjustments -->
+  <div id="menu">
+    <h2>Adjustments</h2>
+    <!-- Flip Camera Button -->
+    <button id="flipCameraBtn" class="button">Flip Camera</button>
+    <!-- HDR Toggle -->
+    <button id="hdrToggleBtn" class="button">Enable HDR</button>
+    <!-- Frame Rate Adjustment -->
+    <div class="sliderContainer">
+      <div class="sliderLabel">Frame Rate</div>
+      <input type="range" id="frameRate" class="slider" min="15" max="60" value="30">
+      <span id="frameRateValue" class="valueDisplay">30 fps</span>
+    </div>
+    <!-- Resolution Adjustment -->
+    <div class="sliderContainer">
+      <div class="sliderLabel">Resolution</div>
+      <select id="resolution" class="slider">
+        <option value="1280x720">720p</option>
+        <option value="1920x1080">1080p</option>
+      </select>
+    </div>
+    <!-- Brightness Adjustment -->
+    <div class="sliderContainer">
+      <div class="sliderLabel">Brightness</div>
+      <input type="range" id="brightness" class="slider" min="0" max="20" value="10">
+      <span id="brightnessValue" class="valueDisplay">10</span>
+    </div>
+    <!-- Contrast Adjustment -->
+    <div class="sliderContainer">
+      <div class="sliderLabel">Contrast</div>
+      <input type="range" id="contrast" class="slider" min="0" max="20" value="20">
+      <span id="contrastValue" class="valueDisplay">20</span>
+    </div>
+    <!-- Processing Scale Adjustment -->
+    <div class="sliderContainer">
+      <div class="sliderLabel">Filter Processing Resolution</div>
+      <input type="range" id="scaleFactor" class="slider" min="10" max="100" value="25">
+      <span id="scaleFactorValue" class="valueDisplay">25%</span>
+    </div>
+    <!-- Left Video Adjustments -->
+    <div class="sliderContainer">
+      <div class="sliderLabel">Left Video X Position</div>
+      <input type="range" id="leftX" class="slider" min="-50" max="50" value="28">
+      <span id="leftXValue" class="valueDisplay">28</span>
+    </div>
+    <div class="sliderContainer">
+      <div class="sliderLabel">Left Video Y Position</div>
+      <input type="range" id="leftY" class="slider" min="-50" max="50" value="0">
+      <span id="leftYValue" class="valueDisplay">0</span>
+    </div>
+    <!-- Right Video Adjustments -->
+    <div class="sliderContainer">
+      <div class="sliderLabel">Right Video X Position</div>
+      <input type="range" id="rightX" class="slider" min="-50" max="50" value="-29">
+      <span id="rightXValue" class="valueDisplay">-29</span>
+    </div>
+    <div class="sliderContainer">
+      <div class="sliderLabel">Right Video Y Position</div>
+      <input type="range" id="rightY" class="slider" min="-50" max="50" value="0">
+      <span id="rightYValue" class="valueDisplay">0</span>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const video1 = document.getElementById('video1');
+      const video2 = document.getElementById('video2');
+      const canvas1 = document.getElementById('canvas1');
+      const canvas2 = document.getElementById('canvas2');
+      const ctx1 = canvas1.getContext('2d');
+      const ctx2 = canvas2.getContext('2d');
+      const menu = document.getElementById('menu');
+      const flipCameraBtn = document.getElementById('flipCameraBtn');
+      const hdrToggleBtn = document.getElementById('hdrToggleBtn');
+
+      // Adjustment sliders
+      const leftX = document.getElementById('leftX');
+      const leftY = document.getElementById('leftY');
+      const rightX = document.getElementById('rightX');
+      const rightY = document.getElementById('rightY');
+
+      // Value displays
+      const leftXValue = document.getElementById('leftXValue');
+      const leftYValue = document.getElementById('leftYValue');
+      const rightXValue = document.getElementById('rightXValue');
+      const rightYValue = document.getElementById('rightYValue');
+
+      // Frame rate and resolution controls
+      const frameRateSlider = document.getElementById('frameRate');
+      const frameRateValue = document.getElementById('frameRateValue');
+      const resolutionSelect = document.getElementById('resolution');
+
+      // Brightness and contrast controls
+      const brightnessSlider = document.getElementById('brightness');
+      const brightnessValue = document.getElementById('brightnessValue');
+      const contrastSlider = document.getElementById('contrast');
+      const contrastValue = document.getElementById('contrastValue');
+
+      // Processing scale factor control
+      const scaleFactorSlider = document.getElementById('scaleFactor');
+      const scaleFactorValue = document.getElementById('scaleFactorValue');
+
+      // Camera label overlay
+      const cameraLabelOverlay = document.getElementById('cameraLabel');
+
+      // Touch variables
+      let initialPinchDistance = null;
+      let lastZoom = 1;
+      let isMenuVisible = false;
+
+      // Camera variables
+      let stream = null;
+      let track = null;
+      let capabilities = null;
+      let settings = null;
+      let currentZoom = 1;
+      let isFrontCamera = false;
+      let hdrEnabled = false; // Start with HDR disabled
+
+      // List of available video input devices
+      let videoDevices = [];
+      let desiredCameraIndices = [2, 3]; // Indices for Cam 3 and Cam 4
+      let currentCameraToggleIndex = 0; // Index to toggle between desired cameras
+      let cameraLabels = [];
+
+      // Voice recognition variables
+      let recognition = null;
+      let isListening = false;
+
+      // Filter variables
+      let filterMode = 0; // 0 - no filter, 1 - motion amplification, 2 - edge detection
+      let amplificationFactor = 100; // Default intensity (0 to 100)
+      let sensitivity = 1.0; // Default sensitivity (0 to 1)
+      let smoothingFactor = 0.5; // For smoothing motion detection
+      let scaleFactor = 0.25; // Default processing scale factor (25%)
+      let thresholdValue = 50; // Default threshold for edge detection (0 to 100)
+
+      // Get the list of video input devices
+      async function getVideoDevices() {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+        // Assign labels like "Cam 1", "Cam 2", etc.
+        cameraLabels = videoDevices.map((device, index) => `Cam ${index + 1}`);
+      }
+
+      // Start the camera with the specified device
+      async function startCamera(deviceId, facingMode) {
+        if (stream) {
+          // Stop the previous stream
+          stream.getTracks().forEach(track => track.stop());
+        }
+
+        // Get selected frame rate and resolution
+        const frameRate = parseInt(frameRateSlider.value);
+        const resolution = resolutionSelect.value.split('x');
+        const width = parseInt(resolution[0]);
+        const height = parseInt(resolution[1]);
+
+        let constraints = {
+          audio: false,
+          video: {
+            width: { ideal: width },
+            height: { ideal: height },
+            frameRate: { ideal: frameRate },
+          },
+        };
+
+        if (deviceId) {
+          constraints.video.deviceId = { exact: deviceId };
+        } else if (facingMode) {
+          constraints.video.facingMode = { exact: facingMode };
+        } else {
+          constraints.video.facingMode = { ideal: 'environment' };
+        }
+
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          video1.srcObject = stream;
+          video2.srcObject = stream;
+
+          track = stream.getVideoTracks()[0];
+          capabilities = track.getCapabilities();
+          settings = track.getSettings();
+
+          console.log('Camera Capabilities:', capabilities);
+          console.log('Camera Settings:', settings);
+
+          // Apply initial brightness and contrast
+          applyBrightnessContrast();
+
+          // Update camera label display
+          updateCameraLabel();
+
+          // Initialize zoom if supported
+          if (capabilities.zoom) {
+            currentZoom = capabilities.zoom.min || 1;
+            lastZoom = currentZoom;
+          }
+
+          // Set canvas dimensions based on video dimensions
+          video1.onloadedmetadata = function() {
+            canvas1.width = video1.videoWidth;
+            canvas1.height = video1.videoHeight;
+          };
+
+          video2.onloadedmetadata = function() {
+            canvas2.width = video2.videoWidth;
+            canvas2.height = video2.videoHeight;
+          };
+
+        } catch (error) {
+          if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
+            console.warn('OverconstrainedError:', error.constraint);
+            // Apply fallback constraints
+            constraints = {
+              audio: false,
+              video: true, // Use default video constraints
+            };
+            try {
+              stream = await navigator.mediaDevices.getUserMedia(constraints);
+              video1.srcObject = stream;
+              video2.srcObject = stream;
+
+              track = stream.getVideoTracks()[0];
+              capabilities = track.getCapabilities();
+              settings = track.getSettings();
+
+              console.log('Fallback Camera Capabilities:', capabilities);
+              console.log('Fallback Camera Settings:', settings);
+
+              // Apply initial brightness and contrast
+              applyBrightnessContrast();
+
+              // Update camera label display
+              updateCameraLabel();
+
+              // Initialize zoom if supported
+              if (capabilities.zoom) {
+                currentZoom = capabilities.zoom.min || 1;
+                lastZoom = currentZoom;
+              }
+
+            } catch (innerError) {
+              alert('Error accessing camera: ' + innerError.name + ' - ' + innerError.message);
+            }
+          } else {
+            alert('Error accessing camera: ' + error.name + ' - ' + error.message);
+          }
+        }
+      }
+
+      // Handle touch events for zoom
+      function handleTouchStart(event) {
+        if (event.touches.length === 2) {
+          initialPinchDistance = getPinchDistance(event.touches);
+        } else if (event.touches.length === 1) {
+          // Single tap to toggle menu
+          const touchTime = new Date().getTime();
+          if (handleTouchStart.lastTouch && (touchTime - handleTouchStart.lastTouch) < 300) {
+            // Double tap detected
+            toggleMenu();
+          }
+          handleTouchStart.lastTouch = touchTime;
+        }
+      }
+
+      function handleTouchMove(event) {
+        if (event.touches.length === 2 && capabilities && capabilities.zoom) {
+          const pinchDistance = getPinchDistance(event.touches);
+          if (initialPinchDistance) {
+            const zoomFactor = pinchDistance / initialPinchDistance;
+            let newZoom = lastZoom * zoomFactor;
+
+            // Clamp the zoom value
+            newZoom = Math.max(capabilities.zoom.min, Math.min(newZoom, capabilities.zoom.max));
+
+            // Apply the zoom
+            track.applyConstraints({ advanced: [{ zoom: newZoom }] });
+            currentZoom = newZoom;
+
+            // Handle camera switching based on zoom level if needed
+          }
+        }
+      }
+
+      function handleTouchEnd(event) {
+        if (event.touches.length < 2) {
+          lastZoom = currentZoom;
+          initialPinchDistance = null;
+        }
+      }
+
+      function getPinchDistance(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.hypot(dx, dy);
+      }
+
+      // Toggle menu visibility
+      function toggleMenu() {
+        isMenuVisible = !isMenuVisible;
+        menu.style.display = isMenuVisible ? 'block' : 'none';
+
+        // Start or stop voice recognition based on menu visibility
+        if (isMenuVisible) {
+          stopVoiceRecognition();
+        } else {
+          startVoiceRecognition();
+        }
+      }
+
+      // Update video positions based on sliders
+      function updateVideoPositions() {
+        video1.style.transform = `translate(${leftX.value}px, ${leftY.value}px)`;
+        video2.style.transform = `translate(${rightX.value}px, ${rightY.value}px)`;
+
+        canvas1.style.transform = `translate(${leftX.value}px, ${leftY.value}px)`;
+        canvas2.style.transform = `translate(${rightX.value}px, ${rightY.value}px)`;
+
+        // Update the value displays
+        leftXValue.textContent = leftX.value;
+        leftYValue.textContent = leftY.value;
+        rightXValue.textContent = rightX.value;
+        rightYValue.textContent = rightY.value;
+      }
+
+      // Update frame rate display
+      function updateFrameRate() {
+        frameRateValue.textContent = `${frameRateSlider.value} fps`;
+        restartCamera();
+      }
+
+      // Update processing scale factor display
+      function updateScaleFactor() {
+        scaleFactorValue.textContent = `${scaleFactorSlider.value}%`;
+        scaleFactor = parseInt(scaleFactorSlider.value) / 100;
+
+        // Reset previous frame data to prevent artifacts
+        video1.previousFrameData = null;
+        video2.previousFrameData = null;
+      }
+
+      // Update brightness and contrast
+      function applyBrightnessContrast() {
+        const brightness = parseInt(brightnessSlider.value);
+        const contrast = parseInt(contrastSlider.value);
+
+        // Apply CSS filters
+        video1.style.filter = `brightness(${brightness * 5}%) contrast(${contrast * 5}%)`;
+        video2.style.filter = `brightness(${brightness * 5}%) contrast(${contrast * 5}%)`;
+
+        // Update value displays
+        brightnessValue.textContent = brightness;
+        contrastValue.textContent = contrast;
+      }
+
+      // Restart the camera with new settings
+      async function restartCamera() {
+        const deviceIndex = desiredCameraIndices[currentCameraToggleIndex];
+        const deviceId = videoDevices[deviceIndex]?.deviceId;
+        await startCamera(deviceId, isFrontCamera ? 'user' : 'environment');
+      }
+
+      // Add event listeners for sliders
+      [leftX, leftY, rightX, rightY].forEach(slider => {
+        slider.addEventListener('input', updateVideoPositions);
+      });
+
+      frameRateSlider.addEventListener('input', updateFrameRate);
+      resolutionSelect.addEventListener('change', restartCamera);
+      brightnessSlider.addEventListener('input', applyBrightnessContrast);
+      contrastSlider.addEventListener('input', applyBrightnessContrast);
+      scaleFactorSlider.addEventListener('input', updateScaleFactor);
+
+      // Flip camera function
+      async function flipCamera() {
+        isFrontCamera = !isFrontCamera;
+        currentZoom = 1;
+        lastZoom = 1;
+        await restartCamera();
+      }
+
+      // HDR toggle function
+      async function toggleHDR() {
+        hdrEnabled = !hdrEnabled;
+        hdrToggleBtn.textContent = hdrEnabled ? 'Disable HDR' : 'Enable HDR';
+        await restartCamera();
+      }
+
+      // Event listeners for buttons
+      flipCameraBtn.addEventListener('click', flipCamera);
+      hdrToggleBtn.addEventListener('click', toggleHDR);
+
+      // Cycle camera function
+      async function cycleCamera() {
+        currentCameraToggleIndex = (currentCameraToggleIndex + 1) % desiredCameraIndices.length;
+        await restartCamera();
+
+        // Update camera label display
+        updateCameraLabel();
+      }
+
+      // Update camera label overlay
+      function updateCameraLabel() {
+        const deviceIndex = desiredCameraIndices[currentCameraToggleIndex];
+        const label = cameraLabels[deviceIndex] || `Cam ${deviceIndex + 1}`;
+        cameraLabelOverlay.textContent = label;
+        cameraLabelOverlay.style.display = 'block';
+
+        // Hide the label after a few seconds
+        setTimeout(() => {
+          cameraLabelOverlay.style.display = 'none';
+        }, 3000);
+      }
+
+      // Switch to a specific camera by name
+      async function switchToCameraByName(camName) {
+        const camNumber = parseInt(camName.replace('Cam ', ''));
+        if (desiredCameraIndices.includes(camNumber - 1)) {
+          currentCameraToggleIndex = desiredCameraIndices.indexOf(camNumber - 1);
+          await restartCamera();
+
+          // Update camera label display
+          updateCameraLabel();
+        } else {
+          console.log(`Camera ${camName} is not in the desired camera list.`);
+        }
+      }
+
+      // Voice recognition setup
+      function startVoiceRecognition() {
+        if ('webkitSpeechRecognition' in window) {
+          recognition = new webkitSpeechRecognition();
+        } else if ('SpeechRecognition' in window) {
+          recognition = new SpeechRecognition();
+        } else {
+          alert('Speech recognition not supported in this browser.');
+          return;
+        }
+
+        recognition.lang = 'en-US';
+        recognition.continuous = true;
+        recognition.interimResults = false;
+
+        recognition.onresult = function(event) {
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              let command = event.results[i][0].transcript.trim().toLowerCase();
+              processVoiceCommand(command);
+            }
+          }
+        };
+
+        recognition.onerror = function(event) {
+          console.error('Voice recognition error:', event.error);
+        };
+
+        recognition.onend = function() {
+          if (!isMenuVisible) {
+            recognition.start();
+          }
+        };
+
+        recognition.start();
+        isListening = true;
+      }
+
+      function stopVoiceRecognition() {
+        if (recognition && isListening) {
+          recognition.stop();
+          isListening = false;
+        }
+      }
+
+      function processVoiceCommand(command) {
+        console.log('Voice command received:', command);
+
+        // Replace number words with digits
+        command = command.replace(/\bzero\b/g, '0')
+                         .replace(/\bone\b/g, '1')
+                         .replace(/\btwo\b/g, '2')
+                         .replace(/\bthree\b/g, '3')
+                         .replace(/\bfour\b/g, '4')
+                         .replace(/\bfive\b/g, '5')
+                         .replace(/\bsix\b/g, '6')
+                         .replace(/\bseven\b/g, '7')
+                         .replace(/\beight\b/g, '8')
+                         .replace(/\bnine\b/g, '9')
+                         .replace(/\bten\b/g, '10');
+
+        // Zoom command
+        const zoomMatch = command.match(/zoom\s*(\d+)/);
+        if (zoomMatch) {
+          const zoomValue = parseInt(zoomMatch[1]);
+          if (!isNaN(zoomValue) && zoomValue >= 0 && zoomValue <= 15) {
+            setZoomLevel(zoomValue);
+            return;
+          }
+        }
+
+        // Frame rate command
+        const frameRateMatch = command.match(/frame\s*rate\s*(\d+)/);
+        if (frameRateMatch) {
+          const frameRateValue = parseInt(frameRateMatch[1]);
+          if (!isNaN(frameRateValue) && frameRateValue >= 15 && frameRateValue <= 60) {
+            frameRateSlider.value = frameRateValue;
+            updateFrameRate();
+            return;
+          }
+        }
+
+        // HDR commands
+        if (command.includes('enable hdr')) {
+          if (!hdrEnabled) {
+            toggleHDR();
+          }
+          return;
+        }
+        if (command.includes('disable hdr')) {
+          if (hdrEnabled) {
+            toggleHDR();
+          }
+          return;
+        }
+
+        // Cycle camera command
+        if (command.includes('cycle camera') || command.includes('cycle cam')) {
+          cycleCamera();
+          return;
+        }
+
+        // Switch to specific camera
+        const switchCamMatch = command.match(/switch to cam\s*(\d+)/);
+        if (switchCamMatch) {
+          const camNumber = parseInt(switchCamMatch[1]);
+          if (!isNaN(camNumber)) {
+            switchToCameraByName(`Cam ${camNumber}`);
+            return;
+          }
+        }
+
+        // Brightness command
+        const brightnessMatch = command.match(/brightness\s*(\d+)/);
+        if (brightnessMatch) {
+          const brightnessValueCmd = parseInt(brightnessMatch[1]);
+          if (!isNaN(brightnessValueCmd) && brightnessValueCmd >= 0 && brightnessValueCmd <= 20) {
+            brightnessSlider.value = brightnessValueCmd;
+            applyBrightnessContrast();
+            return;
+          }
+        }
+
+        // Contrast command
+        const contrastMatch = command.match(/contrast\s*(\d+)/);
+        if (contrastMatch) {
+          const contrastValueCmd = parseInt(contrastMatch[1]);
+          if (!isNaN(contrastValueCmd) && contrastValueCmd >= 0 && contrastValueCmd <= 20) {
+            contrastSlider.value = contrastValueCmd;
+            applyBrightnessContrast();
+            return;
+          }
+        }
+
+        // Filter commands
+        const filterMatch = command.match(/(enable|disable)?\s*filter\s*(\d*)/);
+        if (filterMatch) {
+          const action = filterMatch[1];
+          const filterNumStr = filterMatch[2];
+          let filterNum = 0;
+
+          if (filterNumStr) {
+            filterNum = parseInt(filterNumStr);
+          }
+
+          if (action === 'disable') {
+            filterMode = 0;
+          } else {
+            // action is 'enable' or undefined
+            if (isNaN(filterNum) || filterNum === 0) {
+              // If no filter number specified, default to 1
+              filterNum = 1;
+            }
+            filterMode = filterNum;
+          }
+          updateFilterState();
+          return;
+        }
+
+        const intensityMatch = command.match(/intensity\s*(\d+)/);
+        if (intensityMatch) {
+          const intensityValueCmd = parseInt(intensityMatch[1]);
+          if (!isNaN(intensityValueCmd) && intensityValueCmd >= 0 && intensityValueCmd <= 100) {
+            amplificationFactor = intensityValueCmd;
+            return;
+          }
+        }
+
+        const sensitivityMatch = command.match(/sensitivity\s*(\d+)/);
+        if (sensitivityMatch) {
+          const sensitivityValueCmd = parseInt(sensitivityMatch[1]);
+          if (!isNaN(sensitivityValueCmd) && sensitivityValueCmd >= 0 && sensitivityValueCmd <= 100) {
+            sensitivity = sensitivityValueCmd / 100;
+            return;
+          }
+        }
+
+        // Threshold command
+        const thresholdMatch = command.match(/threshold\s*(\d+)/);
+        if (thresholdMatch) {
+          const thresholdCmd = parseInt(thresholdMatch[1]);
+          if (!isNaN(thresholdCmd) && thresholdCmd >= 0 && thresholdCmd <= 100) {
+            thresholdValue = thresholdCmd;
+            return;
+          }
+        }
+
+        // Scale factor command for other filters
+        const scaleMatch = command.match(/scale\s*(\d+)/);
+        if (scaleMatch) {
+          const scaleValueCmd = parseInt(scaleMatch[1]);
+          if (!isNaN(scaleValueCmd) && scaleValueCmd >= 10 && scaleValueCmd <= 100) {
+            scaleFactorSlider.value = scaleValueCmd;
+            updateScaleFactor();
+            return;
+          }
+        }
+      }
+
+      async function setZoomLevel(zoomValue) {
+        if (capabilities && capabilities.zoom) {
+          // Map zoomValue (0-15) to actual zoom levels
+          const maxZoom = capabilities.zoom.max;
+          const minZoom = capabilities.zoom.min;
+
+          // Map 0 to minZoom, 15 to maxZoom
+          const newZoom = minZoom + ((maxZoom - minZoom) * (zoomValue / 15));
+
+          // Clamp the zoom value
+          const clampedZoom = Math.max(minZoom, Math.min(newZoom, maxZoom));
+
+          // Apply the zoom
+          await track.applyConstraints({ advanced: [{ zoom: clampedZoom }] });
+          currentZoom = clampedZoom;
+          lastZoom = currentZoom;
+        } else {
+          console.log('Zoom not supported on this device.');
+        }
+      }
+
+      // Update filter state
+      function updateFilterState() {
+        if (filterMode !== 0) {
+          video1.style.visibility = 'hidden';
+          video2.style.visibility = 'hidden';
+          canvas1.style.display = 'block';
+          canvas2.style.display = 'block';
+
+          // Reset previous frame data
+          video1.previousFrameData = null;
+          video2.previousFrameData = null;
+        } else {
+          video1.style.visibility = 'visible';
+          video2.style.visibility = 'visible';
+          canvas1.style.display = 'none';
+          canvas2.style.display = 'none';
+
+          // Reset previous frame data
+          video1.previousFrameData = null;
+          video2.previousFrameData = null;
+        }
+      }
+
+      // Process frames for filters
+      function processFrames() {
+        if (filterMode !== 0) {
+          // Process video1
+          processFrame(video1, canvas1, ctx1);
+
+          // Process video2
+          processFrame(video2, canvas2, ctx2);
+        }
+        requestAnimationFrame(processFrames);
+      }
+
+      function processFrame(videoElement, canvasElement, context) {
+        // Draw current frame to offscreen canvas at reduced resolution
+        const tempCanvas = document.createElement('canvas');
+        const tempContext = tempCanvas.getContext('2d');
+
+        const scaledWidth = Math.floor(canvasElement.width * scaleFactor);
+        const scaledHeight = Math.floor(canvasElement.height * scaleFactor);
+
+        tempCanvas.width = scaledWidth;
+        tempCanvas.height = scaledHeight;
+
+        tempContext.drawImage(videoElement, 0, 0, scaledWidth, scaledHeight);
+        const currentFrame = tempContext.getImageData(0, 0, scaledWidth, scaledHeight);
+
+        if (filterMode === 1) {
+          // Motion amplification filter
+          let previousFrameData = videoElement.previousFrameData;
+
+          if (previousFrameData) {
+            const data = currentFrame.data;
+            const prevData = previousFrameData.data;
+            const outputData = new Uint8ClampedArray(data.length);
+
+            // Adjust sensitivity threshold
+            const threshold = 255 * (1 - sensitivity);
+
+            for (let i = 0; i < data.length; i += 4) {
+              // Compute difference for each color channel
+              const diffR = data[i] - prevData[i];
+              const diffG = data[i + 1] - prevData[i + 1];
+              const diffB = data[i + 2] - prevData[i + 2];
+
+              // Calculate the overall motion magnitude
+              const motionMagnitude = Math.sqrt(diffR * diffR + diffG * diffG + diffB * diffB);
+
+              // Update previous frame data with smoothing
+              prevData[i] = prevData[i] * smoothingFactor + data[i] * (1 - smoothingFactor);
+              prevData[i + 1] = prevData[i + 1] * smoothingFactor + data[i + 1] * (1 - smoothingFactor);
+              prevData[i + 2] = prevData[i + 2] * smoothingFactor + data[i + 2] * (1 - smoothingFactor);
+
+              // Apply sensitivity threshold
+              if (motionMagnitude > threshold) {
+                // Amplify differences and clamp values
+                outputData[i] = clamp(data[i] + diffR * amplificationFactor);
+                outputData[i + 1] = clamp(data[i + 1] + diffG * amplificationFactor);
+                outputData[i + 2] = clamp(data[i + 2] + diffB * amplificationFactor);
+              } else {
+                // Keep original pixel
+                outputData[i] = data[i];
+                outputData[i + 1] = data[i + 1];
+                outputData[i + 2] = data[i + 2];
+              }
+
+              outputData[i + 3] = 255; // Fully opaque
+            }
+
+            // Create ImageData from outputData
+            const outputFrame = new ImageData(outputData, scaledWidth, scaledHeight);
+
+            // Draw the processed frame scaled up to the canvas size
+            tempContext.putImageData(outputFrame, 0, 0);
+            context.drawImage(tempCanvas, 0, 0, canvasElement.width, canvasElement.height);
+
+          } else {
+            // Initialize previousFrameData on the first frame
+            videoElement.previousFrameData = currentFrame;
+          }
+
+          // Update previousFrameData
+          videoElement.previousFrameData = currentFrame;
+
+        } else if (filterMode === 2) {
+          // Edge detection filter
+          const data = currentFrame.data;
+          const grayscaleData = new Uint8ClampedArray(data.length / 4);
+
+          // Convert to grayscale
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const gray = (r + g + b) / 3;
+            grayscaleData[i / 4] = gray;
+          }
+
+          // Apply Sobel operator
+          const sobelData = sobelFilter(grayscaleData, scaledWidth, scaledHeight, thresholdValue);
+
+          // Create output image data
+          const outputData = new Uint8ClampedArray(data.length);
+
+          for (let i = 0; i < sobelData.length; i++) {
+            const edge = sobelData[i];
+            outputData[i * 4] = edge;
+            outputData[i * 4 + 1] = edge;
+            outputData[i * 4 + 2] = edge;
+            outputData[i * 4 + 3] = 255; // Fully opaque
+          }
+
+          // Create ImageData from outputData
+          const outputFrame = new ImageData(outputData, scaledWidth, scaledHeight);
+
+          // Draw the processed frame scaled up to the canvas size
+          tempContext.putImageData(outputFrame, 0, 0);
+          context.drawImage(tempCanvas, 0, 0, canvasElement.width, canvasElement.height);
+        }
+      }
+
+      // Sobel filter function
+      function sobelFilter(data, width, height, threshold) {
+        const kernelX = [
+          [-1, 0, 1],
+          [-2, 0, 2],
+          [-1, 0, 1]
+        ];
+        const kernelY = [
+          [-1, -2, -1],
+          [0, 0, 0],
+          [1, 2, 1]
+        ];
+
+        const sobelData = new Uint8ClampedArray(data.length);
+        const edgeThreshold = threshold * 2.55; // Convert 0-100 to 0-255
+
+        for (let y = 1; y < height - 1; y++) {
+          for (let x = 1; x < width - 1; x++) {
+            let pixelX = 0;
+            let pixelY = 0;
+
+            for (let ky = -1; ky <= 1; ky++) {
+              for (let kx = -1; kx <= 1; kx++) {
+                const pixel = data[(x + kx + (y + ky) * width)];
+                pixelX += pixel * kernelX[ky + 1][kx + 1];
+                pixelY += pixel * kernelY[ky + 1][kx + 1];
+              }
+            }
+
+            const magnitude = Math.sqrt(pixelX * pixelX + pixelY * pixelY);
+            sobelData[x + y * width] = magnitude > edgeThreshold ? 0 : 255; // Black and white
+          }
+        }
+
+        return sobelData;
+      }
+
+      // Helper function to clamp values between 0 and 255
+      function clamp(value) {
+        return Math.max(0, Math.min(255, value));
+      }
+
+      // Initialize the app
+      async function init() {
+        await getVideoDevices();
+
+        // Ensure desiredCameraIndices are within the range of available devices
+        desiredCameraIndices = desiredCameraIndices.filter(index => index >= 0 && index < videoDevices.length);
+
+        if (desiredCameraIndices.length === 0) {
+          alert('Desired cameras (Cam 3 and Cam 4) are not available.');
+          return;
+        }
+
+        // Start with the first desired camera
+        currentCameraToggleIndex = 0;
+        await restartCamera();
+
+        // Add touch event listeners
+        document.addEventListener('touchstart', handleTouchStart, false);
+        document.addEventListener('touchmove', handleTouchMove, false);
+        document.addEventListener('touchend', handleTouchEnd, false);
+
+        // Initial video positions
+        updateVideoPositions();
+        updateFrameRate();
+        applyBrightnessContrast();
+        updateScaleFactor();
+
+        // Start voice recognition
+        startVoiceRecognition();
+
+        // Start processing frames
+        processFrames();
+
+        // Set initial filter state
+        updateFilterState();
+      }
+
+      init();
+
+      // Handle orientation changes
+      function adjustLayout() {
+        if (window.innerWidth > window.innerHeight) {
+          // Landscape
+          document.getElementById('videoContainer').style.flexDirection = 'row';
+        } else {
+          // Portrait
+          document.getElementById('videoContainer').style.flexDirection = 'column';
+        }
+      }
+
+      window.addEventListener('resize', adjustLayout);
+      adjustLayout();
+
+      // Full-screen toggle logic
+      const fullscreenOverlay = document.getElementById('fullscreenOverlay');
+
+      fullscreenOverlay.addEventListener('click', function() {
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        } else {
+          if (document.body.requestFullscreen) {
+            document.body.requestFullscreen();
+          } else if (document.body.webkitRequestFullscreen) {
+            document.body.webkitRequestFullscreen();
+          }
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
+
