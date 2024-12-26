@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Double View Camera with Advanced Voice Control and Edge Detection</title>
+  <title>Double View Camera with Advanced Voice Control (Motion Enhancement Only)</title>
   <style>
     html, body {
       margin: 0;
@@ -242,12 +242,12 @@
       let isListening = false;
 
       // Filter variables
-      let filterMode = 0; // 0 - no filter, 1 - motion amplification, 2 - edge detection
-      let amplificationFactor = 100; // Default intensity (0 to 100)
-      let sensitivity = 1.0; // Default sensitivity (0 to 1)
-      let smoothingFactor = 0.5; // For smoothing motion detection
-      let scaleFactor = 0.25; // Default processing scale factor (25%)
-      let thresholdValue = 50; // Default threshold for edge detection (0 to 100)
+      // 0 = no filter, 1 = motion enhancement
+      let filterMode = 0; 
+      let amplificationFactor = 100; // 0 to 100
+      let sensitivity = 1.0;        // 0 to 1
+      let smoothingFactor = 0.5;    // For smoothing motion detection
+      let scaleFactor = 0.25;       // Default processing scale factor (25%)
 
       // Get the list of video input devices
       async function getVideoDevices() {
@@ -658,26 +658,18 @@
           }
         }
 
-        // Filter commands
+        // Filter commands: only 0 or 1 now
+        // e.g. "enable filter" or "disable filter"
         const filterMatch = command.match(/(enable|disable)?\s*filter\s*(\d*)/);
         if (filterMatch) {
           const action = filterMatch[1];
-          const filterNumStr = filterMatch[2];
           let filterNum = 0;
-
-          if (filterNumStr) {
-            filterNum = parseInt(filterNumStr);
-          }
-
           if (action === 'disable') {
             filterMode = 0;
           } else {
-            // action is 'enable' or undefined
-            if (isNaN(filterNum) || filterNum === 0) {
-              // If no filter number specified, default to 1
-              filterNum = 1;
-            }
-            filterMode = filterNum;
+            // If user says "enable filter" with or without a number
+            // We only have 1 filter (motion enhancement), so set to 1
+            filterMode = 1;
           }
           updateFilterState();
           return;
@@ -699,16 +691,6 @@
           const sensitivityVal = parseInt(sensitivityMatch[1]);
           if (!isNaN(sensitivityVal) && sensitivityVal >= 0 && sensitivityVal <= 100) {
             sensitivity = sensitivityVal / 100;
-            return;
-          }
-        }
-
-        // Threshold: "threshold 30"
-        const thresholdMatch = command.match(/threshold\s*(\d+)/);
-        if (thresholdMatch) {
-          const thresholdCmd = parseInt(thresholdMatch[1]);
-          if (!isNaN(thresholdCmd) && thresholdCmd >= 0 && thresholdCmd <= 100) {
-            thresholdValue = thresholdCmd;
             return;
           }
         }
@@ -748,7 +730,7 @@
 
       // Update filter state (enable or disable the canvas)
       function updateFilterState() {
-        if (filterMode !== 0) {
+        if (filterMode === 1) {
           video1.style.visibility = 'hidden';
           video2.style.visibility = 'hidden';
           canvas1.style.display = 'block';
@@ -769,9 +751,9 @@
         }
       }
 
-      // Process frames for filters
+      // Process frames for motion enhancement
       function processFrames() {
-        if (filterMode !== 0) {
+        if (filterMode === 1) {
           // Process video1
           processFrame(video1, canvas1, ctx1);
 
@@ -792,138 +774,57 @@
         tempCanvas.width = scaledWidth;
         tempCanvas.height = scaledHeight;
 
+        // Draw the current video frame to the temp context
         tempContext.drawImage(videoElement, 0, 0, scaledWidth, scaledHeight);
         const currentFrame = tempContext.getImageData(0, 0, scaledWidth, scaledHeight);
 
-        if (filterMode === 1) {
-          // Motion amplification filter
-          let previousFrameData = videoElement.previousFrameData;
-
-          if (previousFrameData) {
-            const data = currentFrame.data;
-            const prevData = previousFrameData.data;
-            const outputData = new Uint8ClampedArray(data.length);
-
-            // Adjust sensitivity threshold
-            const threshold = 255 * (1 - sensitivity);
-
-            for (let i = 0; i < data.length; i += 4) {
-              // Compute difference for each color channel
-              const diffR = data[i] - prevData[i];
-              const diffG = data[i + 1] - prevData[i + 1];
-              const diffB = data[i + 2] - prevData[i + 2];
-
-              // Calculate the overall motion magnitude
-              const motionMagnitude = Math.sqrt(diffR * diffR + diffG * diffG + diffB * diffB);
-
-              // Update previous frame data with smoothing
-              prevData[i] = prevData[i] * smoothingFactor + data[i] * (1 - smoothingFactor);
-              prevData[i + 1] = prevData[i + 1] * smoothingFactor + data[i + 1] * (1 - smoothingFactor);
-              prevData[i + 2] = prevData[i + 2] * smoothingFactor + data[i + 2] * (1 - smoothingFactor);
-
-              // Apply sensitivity threshold
-              if (motionMagnitude > threshold) {
-                // Amplify differences and clamp values
-                outputData[i] = clamp(data[i] + diffR * amplificationFactor);
-                outputData[i + 1] = clamp(data[i + 1] + diffG * amplificationFactor);
-                outputData[i + 2] = clamp(data[i + 2] + diffB * amplificationFactor);
-              } else {
-                // Keep original pixel
-                outputData[i] = data[i];
-                outputData[i + 1] = data[i + 1];
-                outputData[i + 2] = data[i + 2];
-              }
-
-              outputData[i + 3] = 255; // Fully opaque
-            }
-
-            // Create ImageData from outputData
-            const outputFrame = new ImageData(outputData, scaledWidth, scaledHeight);
-
-            // Draw the processed frame scaled up to the canvas size
-            tempContext.putImageData(outputFrame, 0, 0);
-            context.drawImage(tempCanvas, 0, 0, canvasElement.width, canvasElement.height);
-
-          } else {
-            // Initialize previousFrameData on the first frame
-            videoElement.previousFrameData = currentFrame;
-          }
-
-          // Update previousFrameData
-          videoElement.previousFrameData = currentFrame;
-
-        } else if (filterMode === 2) {
-          // Edge detection filter
+        // Only 1 filter: motion amplification
+        let previousFrameData = videoElement.previousFrameData;
+        if (previousFrameData) {
           const data = currentFrame.data;
-          const grayscaleData = new Uint8ClampedArray(data.length / 4);
-
-          // Convert to grayscale
-          for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-            const gray = (r + g + b) / 3;
-            grayscaleData[i / 4] = gray;
-          }
-
-          // Apply Sobel operator
-          const sobelData = sobelFilter(grayscaleData, scaledWidth, scaledHeight, thresholdValue);
-
-          // Create output image data
+          const prevData = previousFrameData.data;
           const outputData = new Uint8ClampedArray(data.length);
 
-          for (let i = 0; i < sobelData.length; i++) {
-            const edge = sobelData[i];
-            outputData[i * 4] = edge;
-            outputData[i * 4 + 1] = edge;
-            outputData[i * 4 + 2] = edge;
-            outputData[i * 4 + 3] = 255; // Fully opaque
+          // The threshold used for ignoring subtle differences
+          const threshold = 255 * (1 - sensitivity);
+
+          for (let i = 0; i < data.length; i += 4) {
+            const diffR = data[i] - prevData[i];
+            const diffG = data[i+1] - prevData[i+1];
+            const diffB = data[i+2] - prevData[i+2];
+
+            // Overall motion magnitude
+            const motionMagnitude = Math.sqrt(diffR * diffR + diffG * diffG + diffB * diffB);
+
+            // Update the "previous frame" with smoothing
+            prevData[i]   = prevData[i]   * smoothingFactor + data[i]   * (1 - smoothingFactor);
+            prevData[i+1] = prevData[i+1] * smoothingFactor + data[i+1] * (1 - smoothingFactor);
+            prevData[i+2] = prevData[i+2] * smoothingFactor + data[i+2] * (1 - smoothingFactor);
+
+            // If motion above threshold, amplify it
+            if (motionMagnitude > threshold) {
+              outputData[i]   = clamp(data[i]   + diffR * amplificationFactor);
+              outputData[i+1] = clamp(data[i+1] + diffG * amplificationFactor);
+              outputData[i+2] = clamp(data[i+2] + diffB * amplificationFactor);
+            } else {
+              // Otherwise, keep original pixel
+              outputData[i]   = data[i];
+              outputData[i+1] = data[i+1];
+              outputData[i+2] = data[i+2];
+            }
+            outputData[i+3] = 255; // fully opaque
           }
 
-          // Create ImageData from outputData
+          // Create a new ImageData from the output data
           const outputFrame = new ImageData(outputData, scaledWidth, scaledHeight);
 
-          // Draw the processed frame scaled up to the canvas size
+          // Draw the processed frame (scaled back up) onto the real canvas
           tempContext.putImageData(outputFrame, 0, 0);
           context.drawImage(tempCanvas, 0, 0, canvasElement.width, canvasElement.height);
         }
-      }
 
-      // Sobel filter function
-      function sobelFilter(data, width, height, threshold) {
-        const kernelX = [
-          [-1, 0, 1],
-          [-2, 0, 2],
-          [-1, 0, 1]
-        ];
-        const kernelY = [
-          [-1, -2, -1],
-          [0, 0, 0],
-          [1, 2, 1]
-        ];
-
-        const sobelData = new Uint8ClampedArray(data.length);
-        const edgeThreshold = threshold * 2.55; // Convert 0-100 to 0-255
-
-        for (let y = 1; y < height - 1; y++) {
-          for (let x = 1; x < width - 1; x++) {
-            let pixelX = 0;
-            let pixelY = 0;
-
-            for (let ky = -1; ky <= 1; ky++) {
-              for (let kx = -1; kx <= 1; kx++) {
-                const pixel = data[(x + kx + (y + ky) * width)];
-                pixelX += pixel * kernelX[ky + 1][kx + 1];
-                pixelY += pixel * kernelY[ky + 1][kx + 1];
-              }
-            }
-
-            const magnitude = Math.sqrt(pixelX * pixelX + pixelY * pixelY);
-            sobelData[x + y * width] = magnitude > edgeThreshold ? 0 : 255; // Black and white
-          }
-        }
-
-        return sobelData;
+        // Update the “previousFrameData” to the current frame
+        videoElement.previousFrameData = currentFrame;
       }
 
       // Helper function to clamp values between 0 and 255
@@ -984,7 +885,6 @@
 
       // Full-screen toggle logic
       const fullscreenOverlay = document.getElementById('fullscreenOverlay');
-
       fullscreenOverlay.addEventListener('click', function() {
         if (document.fullscreenElement) {
           document.exitFullscreen();
