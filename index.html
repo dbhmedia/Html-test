@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <title>Double View Camera with Advanced Voice Control and Edge Detection</title>
   <style>
-    /* (Same CSS as before) */
     html, body {
       margin: 0;
       padding: 0;
@@ -112,7 +111,7 @@
   <div id="fullscreenOverlay"></div>
 
   <!-- Camera label overlay -->
-  <div id="cameraLabel">Cam 3</div>
+  <div id="cameraLabel">Cam 1</div>
 
   <!-- Menu for adjustments -->
   <div id="menu">
@@ -235,8 +234,7 @@
 
       // List of available video input devices
       let videoDevices = [];
-      let desiredCameraIndices = [2, 3]; // Indices for Cam 3 and Cam 4
-      let currentCameraToggleIndex = 0; // Index to toggle between desired cameras
+      let currentCameraToggleIndex = 0; // will iterate through all available cams
       let cameraLabels = [];
 
       // Voice recognition variables
@@ -331,7 +329,7 @@
             // Apply fallback constraints
             constraints = {
               audio: false,
-              video: true, // Use default video constraints
+              video: true // Use default video constraints
             };
             try {
               stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -394,8 +392,6 @@
             // Apply the zoom
             track.applyConstraints({ advanced: [{ zoom: newZoom }] });
             currentZoom = newZoom;
-
-            // Handle camera switching based on zoom level if needed
           }
         }
       }
@@ -434,7 +430,6 @@
         canvas1.style.transform = `translate(${leftX.value}px, ${leftY.value}px)`;
         canvas2.style.transform = `translate(${rightX.value}px, ${rightY.value}px)`;
 
-        // Update the value displays
         leftXValue.textContent = leftX.value;
         leftYValue.textContent = leftY.value;
         rightXValue.textContent = rightX.value;
@@ -473,23 +468,11 @@
 
       // Restart the camera with new settings
       async function restartCamera() {
-        const deviceIndex = desiredCameraIndices[currentCameraToggleIndex];
-        const deviceId = videoDevices[deviceIndex]?.deviceId;
+        const deviceId = videoDevices[currentCameraToggleIndex]?.deviceId;
         await startCamera(deviceId, isFrontCamera ? 'user' : 'environment');
       }
 
-      // Add event listeners for sliders
-      [leftX, leftY, rightX, rightY].forEach(slider => {
-        slider.addEventListener('input', updateVideoPositions);
-      });
-
-      frameRateSlider.addEventListener('input', updateFrameRate);
-      resolutionSelect.addEventListener('change', restartCamera);
-      brightnessSlider.addEventListener('input', applyBrightnessContrast);
-      contrastSlider.addEventListener('input', applyBrightnessContrast);
-      scaleFactorSlider.addEventListener('input', updateScaleFactor);
-
-      // Flip camera function
+      // Flip camera function (front <--> back)
       async function flipCamera() {
         isFrontCamera = !isFrontCamera;
         currentZoom = 1;
@@ -508,19 +491,18 @@
       flipCameraBtn.addEventListener('click', flipCamera);
       hdrToggleBtn.addEventListener('click', toggleHDR);
 
-      // Cycle camera function
+      // Cycle camera through all available video devices
       async function cycleCamera() {
-        currentCameraToggleIndex = (currentCameraToggleIndex + 1) % desiredCameraIndices.length;
-        await restartCamera();
-
-        // Update camera label display
-        updateCameraLabel();
+        if (videoDevices.length > 1) {
+          currentCameraToggleIndex = (currentCameraToggleIndex + 1) % videoDevices.length;
+          await restartCamera();
+          updateCameraLabel();
+        }
       }
 
       // Update camera label overlay
       function updateCameraLabel() {
-        const deviceIndex = desiredCameraIndices[currentCameraToggleIndex];
-        const label = cameraLabels[deviceIndex] || `Cam ${deviceIndex + 1}`;
+        const label = cameraLabels[currentCameraToggleIndex] || `Cam ${currentCameraToggleIndex + 1}`;
         cameraLabelOverlay.textContent = label;
         cameraLabelOverlay.style.display = 'block';
 
@@ -530,17 +512,19 @@
         }, 3000);
       }
 
-      // Switch to a specific camera by name
+      // Switch to a specific camera by name (e.g. "Cam 2")
       async function switchToCameraByName(camName) {
+        // parse the camera number
         const camNumber = parseInt(camName.replace('Cam ', ''));
-        if (desiredCameraIndices.includes(camNumber - 1)) {
-          currentCameraToggleIndex = desiredCameraIndices.indexOf(camNumber - 1);
-          await restartCamera();
+        // indices are zero-based, so subtract 1
+        const targetIndex = camNumber - 1;
 
-          // Update camera label display
+        if (targetIndex >= 0 && targetIndex < videoDevices.length) {
+          currentCameraToggleIndex = targetIndex;
+          await restartCamera();
           updateCameraLabel();
         } else {
-          console.log(`Camera ${camName} is not in the desired camera list.`);
+          console.log(`Camera ${camName} is not in the list of available cameras.`);
         }
       }
 
@@ -605,7 +589,7 @@
                          .replace(/\bnine\b/g, '9')
                          .replace(/\bten\b/g, '10');
 
-        // Zoom command
+        // Zoom command: "zoom 5"
         const zoomMatch = command.match(/zoom\s*(\d+)/);
         if (zoomMatch) {
           const zoomValue = parseInt(zoomMatch[1]);
@@ -615,12 +599,12 @@
           }
         }
 
-        // Frame rate command
+        // Frame rate command: "frame rate 30"
         const frameRateMatch = command.match(/frame\s*rate\s*(\d+)/);
         if (frameRateMatch) {
-          const frameRateValue = parseInt(frameRateMatch[1]);
-          if (!isNaN(frameRateValue) && frameRateValue >= 15 && frameRateValue <= 60) {
-            frameRateSlider.value = frameRateValue;
+          const frameRateVal = parseInt(frameRateMatch[1]);
+          if (!isNaN(frameRateVal) && frameRateVal >= 15 && frameRateVal <= 60) {
+            frameRateSlider.value = frameRateVal;
             updateFrameRate();
             return;
           }
@@ -628,15 +612,11 @@
 
         // HDR commands
         if (command.includes('enable hdr')) {
-          if (!hdrEnabled) {
-            toggleHDR();
-          }
+          if (!hdrEnabled) toggleHDR();
           return;
         }
         if (command.includes('disable hdr')) {
-          if (hdrEnabled) {
-            toggleHDR();
-          }
+          if (hdrEnabled) toggleHDR();
           return;
         }
 
@@ -646,7 +626,7 @@
           return;
         }
 
-        // Switch to specific camera
+        // Switch to specific camera: "switch to cam 2"
         const switchCamMatch = command.match(/switch to cam\s*(\d+)/);
         if (switchCamMatch) {
           const camNumber = parseInt(switchCamMatch[1]);
@@ -656,23 +636,23 @@
           }
         }
 
-        // Brightness command
+        // Brightness command: "brightness 10"
         const brightnessMatch = command.match(/brightness\s*(\d+)/);
         if (brightnessMatch) {
-          const brightnessValueCmd = parseInt(brightnessMatch[1]);
-          if (!isNaN(brightnessValueCmd) && brightnessValueCmd >= 0 && brightnessValueCmd <= 20) {
-            brightnessSlider.value = brightnessValueCmd;
+          const brightnessVal = parseInt(brightnessMatch[1]);
+          if (!isNaN(brightnessVal) && brightnessVal >= 0 && brightnessVal <= 20) {
+            brightnessSlider.value = brightnessVal;
             applyBrightnessContrast();
             return;
           }
         }
 
-        // Contrast command
+        // Contrast command: "contrast 15"
         const contrastMatch = command.match(/contrast\s*(\d+)/);
         if (contrastMatch) {
-          const contrastValueCmd = parseInt(contrastMatch[1]);
-          if (!isNaN(contrastValueCmd) && contrastValueCmd >= 0 && contrastValueCmd <= 20) {
-            contrastSlider.value = contrastValueCmd;
+          const contrastVal = parseInt(contrastMatch[1]);
+          if (!isNaN(contrastVal) && contrastVal >= 0 && contrastVal <= 20) {
+            contrastSlider.value = contrastVal;
             applyBrightnessContrast();
             return;
           }
@@ -703,25 +683,27 @@
           return;
         }
 
+        // Motion amplification intensity: "intensity 40"
         const intensityMatch = command.match(/intensity\s*(\d+)/);
         if (intensityMatch) {
-          const intensityValueCmd = parseInt(intensityMatch[1]);
-          if (!isNaN(intensityValueCmd) && intensityValueCmd >= 0 && intensityValueCmd <= 100) {
-            amplificationFactor = intensityValueCmd;
+          const intensityVal = parseInt(intensityMatch[1]);
+          if (!isNaN(intensityVal) && intensityVal >= 0 && intensityVal <= 100) {
+            amplificationFactor = intensityVal;
             return;
           }
         }
 
+        // Sensitivity: "sensitivity 50"
         const sensitivityMatch = command.match(/sensitivity\s*(\d+)/);
         if (sensitivityMatch) {
-          const sensitivityValueCmd = parseInt(sensitivityMatch[1]);
-          if (!isNaN(sensitivityValueCmd) && sensitivityValueCmd >= 0 && sensitivityValueCmd <= 100) {
-            sensitivity = sensitivityValueCmd / 100;
+          const sensitivityVal = parseInt(sensitivityMatch[1]);
+          if (!isNaN(sensitivityVal) && sensitivityVal >= 0 && sensitivityVal <= 100) {
+            sensitivity = sensitivityVal / 100;
             return;
           }
         }
 
-        // Threshold command
+        // Threshold: "threshold 30"
         const thresholdMatch = command.match(/threshold\s*(\d+)/);
         if (thresholdMatch) {
           const thresholdCmd = parseInt(thresholdMatch[1]);
@@ -731,12 +713,12 @@
           }
         }
 
-        // Scale factor command for other filters
+        // Scale factor: "scale 40"
         const scaleMatch = command.match(/scale\s*(\d+)/);
         if (scaleMatch) {
-          const scaleValueCmd = parseInt(scaleMatch[1]);
-          if (!isNaN(scaleValueCmd) && scaleValueCmd >= 10 && scaleValueCmd <= 100) {
-            scaleFactorSlider.value = scaleValueCmd;
+          const scaleVal = parseInt(scaleMatch[1]);
+          if (!isNaN(scaleVal) && scaleVal >= 10 && scaleVal <= 100) {
+            scaleFactorSlider.value = scaleVal;
             updateScaleFactor();
             return;
           }
@@ -764,7 +746,7 @@
         }
       }
 
-      // Update filter state
+      // Update filter state (enable or disable the canvas)
       function updateFilterState() {
         if (filterMode !== 0) {
           video1.style.visibility = 'hidden';
@@ -953,15 +935,13 @@
       async function init() {
         await getVideoDevices();
 
-        // Ensure desiredCameraIndices are within the range of available devices
-        desiredCameraIndices = desiredCameraIndices.filter(index => index >= 0 && index < videoDevices.length);
-
-        if (desiredCameraIndices.length === 0) {
-          alert('Desired cameras (Cam 3 and Cam 4) are not available.');
+        // If no cameras found, exit
+        if (videoDevices.length === 0) {
+          alert('No video devices found on this device.');
           return;
         }
 
-        // Start with the first desired camera
+        // Start with the first camera in the list
         currentCameraToggleIndex = 0;
         await restartCamera();
 
@@ -979,7 +959,7 @@
         // Start voice recognition
         startVoiceRecognition();
 
-        // Start processing frames
+        // Start processing frames for filters
         processFrames();
 
         // Set initial filter state
@@ -1020,4 +1000,3 @@
   </script>
 </body>
 </html>
-
