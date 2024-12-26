@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Camera App (Motion + UFO Filter + Side-by-Side Snapshot)</title>
+  <title>Camera App (Motion + UFO Filter + Zoom Command)</title>
   <style>
     html, body {
       margin: 0;
@@ -22,6 +22,7 @@
       justify-content: center;
       align-items: center;
     }
+
     /* Left side is #video1 + #canvas1; Right side is #video2 + #canvas2 */
     video, canvas {
       position: absolute;
@@ -35,7 +36,8 @@
     #video2, #canvas2 {
       right: 0;
     }
-    /* The menu, etc., same as before */
+
+    /* Menu (sliders, etc.) */
     #menu {
       position: absolute;
       top: 10%;
@@ -65,6 +67,8 @@
       width: 100%; 
       font-size: 16px;
     }
+
+    /* Full-screen overlay */
     #fullscreenOverlay {
       position: absolute; 
       top: 0; 
@@ -73,16 +77,17 @@
       height: 100%; 
       z-index: 1;
     }
+    /* Camera label overlay */
     #cameraLabel {
-      position: absolute; 
-      top: 10px; 
-      right: 10px; 
-      background-color: rgba(0, 0, 0, 0.7); 
-      color: white; 
-      padding: 5px 10px; 
-      border-radius: 5px; 
-      z-index: 3; 
-      font-size: 16px; 
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 5px 10px;
+      border-radius: 5px;
+      z-index: 3;
+      font-size: 16px;
       display: none;
     }
   </style>
@@ -173,7 +178,7 @@
 
   <script>
     (function() {
-      // Grab references
+      // DOM references
       const video1 = document.getElementById('video1');
       const video2 = document.getElementById('video2');
       const canvas1 = document.getElementById('canvas1');
@@ -205,7 +210,7 @@
 
       const cameraLabelOverlay = document.getElementById('cameraLabel');
 
-      // Basic states
+      // UI states
       let isMenuVisible = false;
       let initialPinchDistance = null;
       let lastZoom = 1;
@@ -230,13 +235,13 @@
       // filterMode: 0=none, 1=motion, 2=UFO
       let filterMode = 0;
 
-      // Motion filter variables
-      let amplificationFactor = 100;
-      let sensitivity = 1.0;
-      let smoothingFactor = 0.5;
-      let scaleFactor = 0.25; // e.g. 25% => 0.25
+      // Motion filter vars
+      let amplificationFactor = 100;  
+      let sensitivity = 1.0;         
+      let smoothingFactor = 0.5;     
+      let scaleFactor = 0.25;        
 
-      // UFO filter variables
+      // UFO filter vars
       let ufoCenterX = 0.5;
       let ufoCenterY = 0.5;
       let ufoDigitalZoom = 3.0;
@@ -251,6 +256,7 @@
         currentCameraToggleIndex = 0;
         await restartCamera();
 
+        // Add listeners
         document.addEventListener('touchstart', handleTouchStart, false);
         document.addEventListener('touchmove', handleTouchMove, false);
         document.addEventListener('touchend', handleTouchEnd, false);
@@ -281,12 +287,14 @@
       }
       init();
 
+      // Enumerate cameras
       async function getVideoDevices() {
         const devices = await navigator.mediaDevices.enumerateDevices();
         videoDevices = devices.filter(d => d.kind === 'videoinput');
         cameraLabels = videoDevices.map((device, i) => `Cam ${i + 1}`);
       }
 
+      // Start / Restart
       async function restartCamera() {
         const deviceId = videoDevices[currentCameraToggleIndex]?.deviceId;
         await startCamera(deviceId, isFrontCamera ? 'user' : 'environment');
@@ -344,6 +352,7 @@
         }
       }
 
+      // Main Filter Loop
       function processFrames() {
         if (filterMode === 1) {
           // motion
@@ -408,7 +417,6 @@
         }
         videoElement.previousFrameData = currentFrame.data.slice();
 
-        // up-scale
         ctx.drawImage(offscreen, 0, 0, scaledW, scaledH,
                                  0, 0, canvasElement.width, canvasElement.height);
       }
@@ -441,7 +449,7 @@
           const bright = (r + g + b) / 3;
           if (bright > brightestVal) {
             brightestVal = bright;
-            let pxIndex = i / 4;
+            const pxIndex = i / 4;
             brightestX = pxIndex % offscreen.width;
             brightestY = Math.floor(pxIndex / offscreen.width);
           }
@@ -477,7 +485,7 @@
         } else if ('SpeechRecognition' in window) {
           recognition = new SpeechRecognition();
         } else {
-          alert('Speech recognition not supported.');
+          alert('Speech recognition not supported in this browser.');
           return;
         }
 
@@ -497,7 +505,6 @@
         recognition.onend = () => {
           if (!isMenuVisible) recognition.start();
         };
-
         recognition.start();
         isListening = true;
       }
@@ -524,6 +531,7 @@
           .replace(/\bnine\b/g, '9')
           .replace(/\bten\b/g, '10');
 
+        // "enable filter 1/2" / "disable filter"
         const fMatch = command.match(/(enable|disable)\s*filter\s*(\d*)/);
         if (fMatch) {
           const action = fMatch[1];
@@ -533,14 +541,14 @@
           } else {
             // enable
             if (fNum === 1) {
-              filterMode = 1;
+              filterMode = 1; // motion
             } else if (fNum === 2) {
-              filterMode = 2;
+              filterMode = 2; // UFO
               ufoDigitalZoom = 3.0;
               ufoCenterX = 0.5;
               ufoCenterY = 0.5;
             } else {
-              // default to UFO
+              // default UFO
               filterMode = 2;
               ufoDigitalZoom = 3.0;
               ufoCenterX = 0.5;
@@ -551,11 +559,24 @@
           return;
         }
 
+        // *** Zoom # (1..10) *** => system-level camera zoom if capabilities support it
+        const zoomRegex = /zoom\s*(\d+)/;
+        const zoomMatch = command.match(zoomRegex);
+        if (zoomMatch) {
+          const zoomVal = parseInt(zoomMatch[1]);
+          if (!isNaN(zoomVal) && zoomVal >= 1 && zoomVal <= 10) {
+            setZoomLevel(zoomVal);
+            return;
+          }
+        }
+
+        // "take picture"
         if (command.includes('take picture')) {
           takePicture();
           return;
         }
 
+        // UFO push/pull
         if (filterMode === 2) {
           if (command.includes('push')) {
             ufoDigitalZoom *= 1.25;
@@ -568,6 +589,7 @@
           }
         }
 
+        // motion filter intensity/sensitivity
         const im = command.match(/intensity\s*(\d+)/);
         if (im) {
           const iv = parseInt(im[1]);
@@ -585,6 +607,7 @@
           return;
         }
 
+        // "frame rate 30"
         const fr = command.match(/frame\s*rate\s*(\d+)/);
         if (fr) {
           const val = parseInt(fr[1]);
@@ -603,7 +626,6 @@
           cycleCamera();
           return;
         }
-
         const sc = command.match(/switch to cam\s*(\d+)/);
         if (sc) {
           const cnum = parseInt(sc[1]);
@@ -629,7 +651,6 @@
           }
           return;
         }
-
         const cm = command.match(/contrast\s*(\d+)/);
         if (cm) {
           const cv = parseInt(cm[1]);
@@ -641,67 +662,80 @@
         }
       }
 
-      /**
-       * takePicture():
-       *  - If filterMode=0 => we capture raw video from video1/video2
-       *  - If filterMode=1 or 2 => we capture from canvas1/canvas2
-       *  - Merge side by side => single PNG download
-       */
+      // New helper to set system-level camera zoom [1..10]
+      async function setZoomLevel(zoomValue) {
+        if (!capabilities || !capabilities.zoom) {
+          console.log('Zoom not supported on this device/camera.');
+          return;
+        }
+        const minZ = capabilities.zoom.min || 1;
+        const maxZ = capabilities.zoom.max || 1;
+
+        // Map 1..10 => minZ..maxZ
+        // e.g. zoom=1 => minZ, zoom=10 => maxZ
+        if (minZ >= maxZ) return; // no range to zoom
+
+        const normalized = (zoomValue - 1) / (10 - 1); // 0..1
+        const newZoom = minZ + normalized * (maxZ - minZ);
+
+        // clamp & apply
+        const clamped = Math.max(minZ, Math.min(newZoom, maxZ));
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: clamped }] });
+          currentZoom = clamped;
+          lastZoom = currentZoom;
+          console.log(`Applied system zoom: ${clamped}`);
+        } catch (err) {
+          console.warn('Zoom constraint error:', err);
+        }
+      }
+
+      // TAKE PICTURE:
+      // => If filterMode=0, captures raw video from video1/video2.
+      // => If filterMode=1 or 2, captures processed canvases side by side.
       function takePicture() {
-        // 1) We'll figure out a reference width/height. 
-        //    Let's use the "visible" widths of video or canvas for each side.
         let leftWidth, leftHeight;
         let rightWidth, rightHeight;
 
         if (filterMode === 0) {
-          // No filter => capturing raw video feed
-          leftWidth  = video1.videoWidth;
-          leftHeight = video1.videoHeight;
-
-          rightWidth  = video2.videoWidth;
-          rightHeight = video2.videoHeight;
+          // No filter => raw video from video1 & video2
+          leftWidth = video1.videoWidth;
+          leftHeight= video1.videoHeight;
+          rightWidth= video2.videoWidth;
+          rightHeight=video2.videoHeight;
         } else {
-          // Filter => capturing canvas
+          // Filter => canvas1 & canvas2
           leftWidth  = canvas1.width;
           leftHeight = canvas1.height;
-
           rightWidth  = canvas2.width;
           rightHeight = canvas2.height;
         }
 
-        // We'll pick the max height of the two sides
         let finalWidth  = leftWidth + rightWidth;
         let finalHeight = Math.max(leftHeight, rightHeight);
 
-        // 2) Create an offscreen to hold the combined image
         const snapshot = document.createElement('canvas');
         snapshot.width  = finalWidth;
         snapshot.height = finalHeight;
         const sctx = snapshot.getContext('2d');
 
-        // 3) Draw the left side
+        // Draw left side
         if (filterMode === 0) {
-          // raw video
           sctx.drawImage(video1, 0, 0, leftWidth, leftHeight);
         } else {
-          // filter => use left canvas
           sctx.drawImage(canvas1, 0, 0, leftWidth, leftHeight);
         }
 
-        // 4) Draw the right side
+        // Draw right side
         if (filterMode === 0) {
           sctx.drawImage(video2, leftWidth, 0, rightWidth, rightHeight);
         } else {
           sctx.drawImage(canvas2, leftWidth, 0, rightWidth, rightHeight);
         }
 
-        // 5) Convert to PNG data URL
         const dataURL = snapshot.toDataURL('image/png');
-
-        // 6) Create a random filename
         const randomName = 'snapshot_' + Math.random().toString(36).slice(2, 10) + '.png';
 
-        // 7) Download
         const link = document.createElement('a');
         link.href = dataURL;
         link.download = randomName;
@@ -712,7 +746,6 @@
 
       function updateFilterState() {
         if (filterMode === 0) {
-          // Show raw video
           video1.style.visibility = 'visible';
           video2.style.visibility = 'visible';
           canvas1.style.display = 'none';
@@ -729,7 +762,6 @@
         }
       }
 
-      // Camera toggles
       function flipCamera() {
         isFrontCamera = !isFrontCamera;
         currentZoom = 1;
@@ -766,7 +798,6 @@
         await restartCamera();
       }
 
-      // Sliders
       function updateFrameRate() {
         frameRateValue.textContent = `${frameRateSlider.value} fps`;
         restartCamera();
@@ -798,7 +829,7 @@
         rightYValue.textContent = rightY.value;
       }
 
-      // Touch & Menu
+      // Touch pinch zoom / menu toggles
       function handleTouchStart(e) {
         if (e.touches.length === 2) {
           initialPinchDistance = getPinchDistance(e.touches);
