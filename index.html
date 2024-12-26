@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Double View Camera with Advanced Voice Control (Motion Enhancement Only)</title>
+  <title>Camera App with Motion Enhancement & UFO Filter</title>
   <style>
     html, body {
       margin: 0;
@@ -242,11 +242,24 @@
       let isListening = false;
 
       // Filter variables
-      // 0 = no filter, 1 = motion enhancement
-      let filterMode = 0; 
+      // filterMode: 0 = no filter, 1 = motion enhancement, 2 = UFO filter
+      let filterMode = 0;
+
+      // Motion Enhancement variables
       let amplificationFactor = 100; // 0 to 100
       let sensitivity = 1.0;        // 0 to 1
       let smoothingFactor = 0.5;    // For smoothing motion detection
+
+      // UFO Filter variables
+      let ufoMaxPoints = 5;         // We'll track the top 5 brightest points
+      let ufoPoints = [];           // array of { x, y, brightness }
+      let ufoPointIndex = 0;        // which point is currently “selected”
+      let ufoDigitalZoom = 1.0;     // digital zoom factor
+      let ufoSmoothing = 0.9;       // how smoothly we re-center
+      let ufoCenterX = 0.5;         // normalized center (0..1)
+      let ufoCenterY = 0.5;         // normalized center (0..1)
+
+      // Global scale factor for processing
       let scaleFactor = 0.25;       // Default processing scale factor (25%)
 
       // Get the list of video input devices
@@ -576,7 +589,7 @@
       function processVoiceCommand(command) {
         console.log('Voice command received:', command);
 
-        // Replace number words with digits
+        // Replace number words with digits (optional convenience)
         command = command.replace(/\bzero\b/g, '0')
                          .replace(/\bone\b/g, '1')
                          .replace(/\btwo\b/g, '2')
@@ -658,24 +671,35 @@
           }
         }
 
-        // Filter commands: only 0 or 1 now
-        // e.g. "enable filter" or "disable filter"
-        const filterMatch = command.match(/(enable|disable)?\s*filter\s*(\d*)/);
+        // Filter commands:
+        // "enable filter 1" (motion), "enable filter 2" (UFO), "disable filter", etc.
+        const filterMatch = command.match(/(enable|disable)\s*filter\s*(\d*)/);
         if (filterMatch) {
           const action = filterMatch[1];
+          const filterNumStr = filterMatch[2];
           let filterNum = 0;
+
           if (action === 'disable') {
             filterMode = 0;
           } else {
-            // If user says "enable filter" with or without a number
-            // We only have 1 filter (motion enhancement), so set to 1
-            filterMode = 1;
+            // action is 'enable'
+            if (!filterNumStr) {
+              // if no number, default to 1 (motion)
+              filterNum = 1;
+            } else {
+              filterNum = parseInt(filterNumStr);
+              if (isNaN(filterNum) || filterNum < 1 || filterNum > 2) {
+                filterNum = 1; // fallback
+              }
+            }
+            filterMode = filterNum;
           }
           updateFilterState();
           return;
         }
 
-        // Motion amplification intensity: "intensity 40"
+        // Motion filter parameters
+        // e.g. "intensity 40", "sensitivity 50" (for motion)
         const intensityMatch = command.match(/intensity\s*(\d+)/);
         if (intensityMatch) {
           const intensityVal = parseInt(intensityMatch[1]);
@@ -685,7 +709,6 @@
           }
         }
 
-        // Sensitivity: "sensitivity 50"
         const sensitivityMatch = command.match(/sensitivity\s*(\d+)/);
         if (sensitivityMatch) {
           const sensitivityVal = parseInt(sensitivityMatch[1]);
@@ -705,8 +728,34 @@
             return;
           }
         }
+
+        // UFO Filter (filterMode=2) voice commands
+        // "next", "previous", "push", "pull"
+        if (filterMode === 2) {
+          if (command.includes('next')) {
+            ufoNextPoint();
+            return;
+          }
+          if (command.includes('previous')) {
+            ufoPreviousPoint();
+            return;
+          }
+          if (command.includes('push')) {
+            // "push" = zoom in
+            ufoDigitalZoom *= 1.2;
+            return;
+          }
+          if (command.includes('pull')) {
+            // "pull" = zoom out
+            ufoDigitalZoom /= 1.2;
+            // clamp to not go below 1
+            if (ufoDigitalZoom < 1) ufoDigitalZoom = 1;
+            return;
+          }
+        }
       }
 
+      // Setting system camera zoom
       async function setZoomLevel(zoomValue) {
         if (capabilities && capabilities.zoom) {
           // Map zoomValue (0-15) to actual zoom levels
@@ -728,18 +777,10 @@
         }
       }
 
-      // Update filter state (enable or disable the canvas)
+      // Update filter state (enable or disable the canvas, etc.)
       function updateFilterState() {
-        if (filterMode === 1) {
-          video1.style.visibility = 'hidden';
-          video2.style.visibility = 'hidden';
-          canvas1.style.display = 'block';
-          canvas2.style.display = 'block';
-
-          // Reset previous frame data
-          video1.previousFrameData = null;
-          video2.previousFrameData = null;
-        } else {
+        if (filterMode === 0) {
+          // No filter
           video1.style.visibility = 'visible';
           video2.style.visibility = 'visible';
           canvas1.style.display = 'none';
@@ -748,22 +789,48 @@
           // Reset previous frame data
           video1.previousFrameData = null;
           video2.previousFrameData = null;
+        } else {
+          // Hide original videos, show canvas
+          video1.style.visibility = 'hidden';
+          video2.style.visibility = 'hidden';
+          canvas1.style.display = 'block';
+          canvas2.style.display = 'block';
+
+          // Reset previous frame data
+          video1.previousFrameData = null;
+          video2.previousFrameData = null;
         }
       }
 
-      // Process frames for motion enhancement
+      // UFO filter: cycle to the next bright point
+      function ufoNextPoint() {
+        if (!ufoPoints || ufoPoints.length === 0) return;
+        ufoPointIndex = (ufoPointIndex + 1) % ufoPoints.length;
+      }
+      // UFO filter: cycle to the previous bright point
+      function ufoPreviousPoint() {
+        if (!ufoPoints || ufoPoints.length === 0) return;
+        ufoPointIndex = (ufoPointIndex - 1 + ufoPoints.length) % ufoPoints.length;
+      }
+
+      // Process frames for the chosen filter
       function processFrames() {
         if (filterMode === 1) {
-          // Process video1
-          processFrame(video1, canvas1, ctx1);
-
-          // Process video2
-          processFrame(video2, canvas2, ctx2);
+          // Motion Enhancement
+          processMotionFrame(video1, canvas1, ctx1);
+          processMotionFrame(video2, canvas2, ctx2);
+        } else if (filterMode === 2) {
+          // UFO Filter
+          processUfoFrame(video1, canvas1, ctx1);
+          processUfoFrame(video2, canvas2, ctx2);
         }
         requestAnimationFrame(processFrames);
       }
 
-      function processFrame(videoElement, canvasElement, context) {
+      /*************************************************
+       * MOTION ENHANCEMENT FILTER
+       *************************************************/
+      function processMotionFrame(videoElement, canvasElement, context) {
         // Draw current frame to offscreen canvas at reduced resolution
         const tempCanvas = document.createElement('canvas');
         const tempContext = tempCanvas.getContext('2d');
@@ -778,7 +845,6 @@
         tempContext.drawImage(videoElement, 0, 0, scaledWidth, scaledHeight);
         const currentFrame = tempContext.getImageData(0, 0, scaledWidth, scaledHeight);
 
-        // Only 1 filter: motion amplification
         let previousFrameData = videoElement.previousFrameData;
         if (previousFrameData) {
           const data = currentFrame.data;
@@ -815,10 +881,7 @@
             outputData[i+3] = 255; // fully opaque
           }
 
-          // Create a new ImageData from the output data
           const outputFrame = new ImageData(outputData, scaledWidth, scaledHeight);
-
-          // Draw the processed frame (scaled back up) onto the real canvas
           tempContext.putImageData(outputFrame, 0, 0);
           context.drawImage(tempCanvas, 0, 0, canvasElement.width, canvasElement.height);
         }
@@ -827,9 +890,100 @@
         videoElement.previousFrameData = currentFrame;
       }
 
-      // Helper function to clamp values between 0 and 255
       function clamp(value) {
         return Math.max(0, Math.min(255, value));
+      }
+
+      /*************************************************
+       * UFO FILTER
+       *************************************************/
+      function processUfoFrame(videoElement, canvasElement, context) {
+        // We'll do a naive pass to find the top 5 brightest points in the reduced frame.
+        // Then we'll center on whichever index is selected.
+
+        const tempCanvas = document.createElement('canvas');
+        const tempContext = tempCanvas.getContext('2d');
+
+        const scaledWidth = Math.floor(canvasElement.width * scaleFactor);
+        const scaledHeight = Math.floor(canvasElement.height * scaleFactor);
+
+        tempCanvas.width = scaledWidth;
+        tempCanvas.height = scaledHeight;
+
+        // Draw the current video frame to the temp context
+        tempContext.drawImage(videoElement, 0, 0, scaledWidth, scaledHeight);
+        const frameData = tempContext.getImageData(0, 0, scaledWidth, scaledHeight);
+
+        // find top 5 brightest
+        const points = [];
+        for (let y = 0; y < scaledHeight; y++) {
+          for (let x = 0; x < scaledWidth; x++) {
+            const i = (y * scaledWidth + x) * 4;
+            const r = frameData.data[i + 0];
+            const g = frameData.data[i + 1];
+            const b = frameData.data[i + 2];
+            const brightness = (r + g + b) / 3;
+            // do a simple insertion sort style approach
+            if (points.length < ufoMaxPoints) {
+              points.push({ x, y, brightness });
+              points.sort((a, b) => b.brightness - a.brightness);
+            } else if (brightness > points[points.length - 1].brightness) {
+              points[points.length - 1] = { x, y, brightness };
+              points.sort((a, b) => b.brightness - a.brightness);
+            }
+          }
+        }
+
+        ufoPoints = points;
+        if (ufoPoints.length === 0) {
+          // No bright points, just draw the normal frame
+          context.drawImage(tempCanvas, 0, 0, canvasElement.width, canvasElement.height);
+          return;
+        }
+
+        // clamp index
+        ufoPointIndex = Math.min(ufoPointIndex, ufoPoints.length - 1);
+
+        // get the chosen point
+        const chosen = ufoPoints[ufoPointIndex];
+        // normalized coords in the scaled frame
+        const targetX = chosen.x / scaledWidth;
+        const targetY = chosen.y / scaledHeight;
+
+        // we want to move the "ufoCenterX/Y" smoothly to the target
+        ufoCenterX = ufoCenterX * ufoSmoothing + targetX * (1 - ufoSmoothing);
+        ufoCenterY = ufoCenterY * ufoSmoothing + targetY * (1 - ufoSmoothing);
+
+        // Now we want to draw the full-size frame so that (ufoCenterX, ufoCenterY) is centered
+        // in the output canvas. We'll do some transforms to "pan" the image.
+
+        // We'll expand the scaled frame by ufoDigitalZoom
+        const displayWidth = scaledWidth * ufoDigitalZoom;
+        const displayHeight = scaledHeight * ufoDigitalZoom;
+
+        // figure out top-left of the final subrect in the scaled coordinate system
+        // we want chosen to appear in center: (ufoCenterX * displayWidth) ~ displayWidth/2
+        // => offsetX = displayWidth/2 - (ufoCenterX * displayWidth)
+        const offsetX = displayWidth / 2 - (ufoCenterX * displayWidth);
+        const offsetY = displayHeight / 2 - (ufoCenterY * displayHeight);
+
+        // draw
+        // We can do it by drawing from the scaled image to the big canvas.
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = displayWidth;
+        finalCanvas.height = displayHeight;
+        const finalContext = finalCanvas.getContext('2d');
+        // draw the scaled image
+        finalContext.drawImage(tempCanvas, 0, 0, scaledWidth, scaledHeight, 0, 0, displayWidth, displayHeight);
+
+        // now draw the finalCanvas subregion to our real canvas
+        context.drawImage(
+          finalCanvas,
+          offsetX, offsetY, // which portion of the finalCanvas to start from
+          canvasElement.width, canvasElement.height, // how big a chunk we take
+          0, 0, // x,y in final drawing
+          canvasElement.width, canvasElement.height // final width/height
+        );
       }
 
       // Initialize the app
@@ -860,7 +1014,7 @@
         // Start voice recognition
         startVoiceRecognition();
 
-        // Start processing frames for filters
+        // Start processing frames
         processFrames();
 
         // Set initial filter state
