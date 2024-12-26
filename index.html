@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Camera App: Simplified UFO Filter (Non-Recursive)</title>
+  <title>Camera App (Motion + UFO Filter + Take Picture)</title>
   <style>
     html, body {
       margin: 0;
@@ -18,10 +18,12 @@
       width: 100%;
       height: 100%;
       display: flex;
-      flex-direction: row;
+      flex-direction: row; /* We'll adjust to column in JS if portrait */
       justify-content: center;
       align-items: center;
     }
+
+    /* The two video elements and two canvases (left, right) */
     video, canvas {
       position: absolute;
       width: 50%;
@@ -29,12 +31,13 @@
       object-fit: cover;
     }
     #video1, #canvas1 {
-      left: 0;
+      left: 0;  /* Left half of screen */
     }
     #video2, #canvas2 {
-      right: 0;
+      right: 0; /* Right half of screen */
     }
-    /* Menu styles */
+
+    /* The on-screen menu (sliders, etc.) */
     #menu {
       position: absolute;
       top: 10%;
@@ -43,7 +46,7 @@
       background-color: rgba(0, 0, 0, 0.7);
       padding: 10px;
       border-radius: 10px;
-      display: none;
+      display: none; /* Hidden by default; toggled by double-tap */
       color: white;
       z-index: 2;
     }
@@ -64,7 +67,6 @@
       font-size: 14px;
       margin-left: 10px;
     }
-    /* Button styles */
     .button {
       background-color: #444;
       color: white;
@@ -75,6 +77,7 @@
       width: 100%;
       font-size: 16px;
     }
+
     /* Full-screen toggle overlay */
     #fullscreenOverlay {
       position: absolute;
@@ -84,7 +87,8 @@
       height: 100%;
       z-index: 1;
     }
-    /* Camera label overlay */
+
+    /* Camera label overlay (e.g. "Cam 1") */
     #cameraLabel {
       position: absolute;
       top: 10px;
@@ -99,15 +103,19 @@
     }
   </style>
 </head>
+
 <body>
   <div id="videoContainer">
+    <!-- Left Camera / Canvas -->
     <video id="video1" autoplay playsinline></video>
-    <video id="video2" autoplay playsinline></video>
     <canvas id="canvas1"></canvas>
+
+    <!-- Right Camera / Canvas -->
+    <video id="video2" autoplay playsinline></video>
     <canvas id="canvas2"></canvas>
   </div>
 
-  <!-- Full-screen toggle overlay -->
+  <!-- Full-screen overlay (for toggling by a tap) -->
   <div id="fullscreenOverlay"></div>
 
   <!-- Camera label overlay -->
@@ -120,13 +128,15 @@
     <button id="flipCameraBtn" class="button">Flip Camera</button>
     <!-- HDR Toggle -->
     <button id="hdrToggleBtn" class="button">Enable HDR</button>
-    <!-- Frame Rate Adjustment -->
+
+    <!-- Frame Rate -->
     <div class="sliderContainer">
       <div class="sliderLabel">Frame Rate</div>
       <input type="range" id="frameRate" class="slider" min="15" max="60" value="30">
       <span id="frameRateValue" class="valueDisplay">30 fps</span>
     </div>
-    <!-- Resolution Adjustment -->
+
+    <!-- Resolution -->
     <div class="sliderContainer">
       <div class="sliderLabel">Resolution</div>
       <select id="resolution" class="slider">
@@ -134,33 +144,68 @@
         <option value="1920x1080">1080p</option>
       </select>
     </div>
-    <!-- Brightness Adjustment -->
+
+    <!-- Brightness -->
     <div class="sliderContainer">
       <div class="sliderLabel">Brightness</div>
       <input type="range" id="brightness" class="slider" min="0" max="20" value="10">
       <span id="brightnessValue" class="valueDisplay">10</span>
     </div>
-    <!-- Contrast Adjustment -->
+
+    <!-- Contrast -->
     <div class="sliderContainer">
       <div class="sliderLabel">Contrast</div>
       <input type="range" id="contrast" class="slider" min="0" max="20" value="20">
       <span id="contrastValue" class="valueDisplay">20</span>
     </div>
+
+    <!-- Processing Scale (only used for Motion filter) -->
+    <div class="sliderContainer">
+      <div class="sliderLabel">Motion Filter Scale Factor</div>
+      <input type="range" id="scaleFactor" class="slider" min="10" max="100" value="25">
+      <span id="scaleFactorValue" class="valueDisplay">25%</span>
+    </div>
+
+    <!-- Left Video Offsets -->
+    <div class="sliderContainer">
+      <div class="sliderLabel">Left Video X Position</div>
+      <input type="range" id="leftX" class="slider" min="-50" max="50" value="28">
+      <span id="leftXValue" class="valueDisplay">28</span>
+    </div>
+    <div class="sliderContainer">
+      <div class="sliderLabel">Left Video Y Position</div>
+      <input type="range" id="leftY" class="slider" min="-50" max="50" value="0">
+      <span id="leftYValue" class="valueDisplay">0</span>
+    </div>
+
+    <!-- Right Video Offsets -->
+    <div class="sliderContainer">
+      <div class="sliderLabel">Right Video X Position</div>
+      <input type="range" id="rightX" class="slider" min="-50" max="50" value="-29">
+      <span id="rightXValue" class="valueDisplay">-29</span>
+    </div>
+    <div class="sliderContainer">
+      <div class="sliderLabel">Right Video Y Position</div>
+      <input type="range" id="rightY" class="slider" min="-50" max="50" value="0">
+      <span id="rightYValue" class="valueDisplay">0</span>
+    </div>
   </div>
 
   <script>
     (function() {
+      // DOM elements
       const video1 = document.getElementById('video1');
       const video2 = document.getElementById('video2');
       const canvas1 = document.getElementById('canvas1');
       const canvas2 = document.getElementById('canvas2');
+
       const ctx1 = canvas1.getContext('2d');
       const ctx2 = canvas2.getContext('2d');
+
       const menu = document.getElementById('menu');
       const flipCameraBtn = document.getElementById('flipCameraBtn');
       const hdrToggleBtn = document.getElementById('hdrToggleBtn');
 
-      // Sliders
       const frameRateSlider = document.getElementById('frameRate');
       const frameRateValue = document.getElementById('frameRateValue');
       const resolutionSelect = document.getElementById('resolution');
@@ -170,20 +215,27 @@
       const contrastSlider = document.getElementById('contrast');
       const contrastValue = document.getElementById('contrastValue');
 
+      const scaleFactorSlider = document.getElementById('scaleFactor');
+      const scaleFactorValue = document.getElementById('scaleFactorValue');
+
       const leftX = document.getElementById('leftX');
       const leftY = document.getElementById('leftY');
       const rightX = document.getElementById('rightX');
       const rightY = document.getElementById('rightY');
 
-      // Camera label overlay
+      const leftXValue = document.getElementById('leftXValue');
+      const leftYValue = document.getElementById('leftYValue');
+      const rightXValue = document.getElementById('rightXValue');
+      const rightYValue = document.getElementById('rightYValue');
+
       const cameraLabelOverlay = document.getElementById('cameraLabel');
 
-      // Touch variables
+      // Touch / UI
+      let isMenuVisible = false;
       let initialPinchDistance = null;
       let lastZoom = 1;
-      let isMenuVisible = false;
 
-      // Cameras
+      // Camera handling
       let stream = null;
       let track = null;
       let capabilities = null;
@@ -196,60 +248,70 @@
       let currentCameraToggleIndex = 0;
       let cameraLabels = [];
 
-      // Voice recognition
+      // Voice
       let recognition = null;
       let isListening = false;
 
-      // filterMode: 0 = no filter, 1 = motion, 2 = UFO
+      // filterMode: 0=none, 1=motion, 2=UFO
       let filterMode = 0;
 
-      /*************************************************
-       * MOTION FILTER VARIABLES
-       *************************************************/
-      let amplificationFactor = 100; // 0..100
-      let sensitivity = 1.0;        // 0..1
-      let smoothingFactor = 0.5;    // for motion
+      // Motion filter variables
+      let amplificationFactor = 100;  // "intensity"
+      let sensitivity = 1.0;         // "sensitivity"
+      let smoothingFactor = 0.5;     // smoothing
+      let scaleFactor = 0.25;        // for motion filter
 
-      /*************************************************
-       * UFO FILTER VARIABLES
-       *************************************************/
-      // We'll track the single brightest pixel in the raw feed.
-      // Then we'll digitally zoom in around that pixel.
-      // We'll do a simple "smoothing" so the center doesn't jerk around.
+      // UFO filter variables
       let ufoCenterX = 0.5;
       let ufoCenterY = 0.5;
-      let ufoDigitalZoom = 3.0;   // default to 3x
-      let ufoSmoothing = 0.9;     // 0.0 = no smoothing, 1.0 = never move
+      let ufoDigitalZoom = 3.0;   // default 3x
+      let ufoSmoothing = 0.9;
 
-      //--- Setup & Start ------------------------------------------------------
+      //--- Initialization ----------------------------------------------------
       async function init() {
         await getVideoDevices();
+
         if (videoDevices.length === 0) {
           alert('No video devices found.');
           return;
         }
 
+        // Start with the first camera
         currentCameraToggleIndex = 0;
         await restartCamera();
 
+        // Add event listeners
         document.addEventListener('touchstart', handleTouchStart, false);
         document.addEventListener('touchmove', handleTouchMove, false);
         document.addEventListener('touchend', handleTouchEnd, false);
 
+        frameRateSlider.addEventListener('input', updateFrameRate);
+        resolutionSelect.addEventListener('change', restartCamera);
+        brightnessSlider.addEventListener('input', applyBrightnessContrast);
+        contrastSlider.addEventListener('input', applyBrightnessContrast);
+        scaleFactorSlider.addEventListener('input', updateScaleFactor);
+
+        [leftX, leftY, rightX, rightY].forEach(slider => {
+          slider.addEventListener('input', updateVideoPositions);
+        });
+
+        flipCameraBtn.addEventListener('click', flipCamera);
+        hdrToggleBtn.addEventListener('click', toggleHDR);
+
+        // Initial UI
         updateFrameRate();
         applyBrightnessContrast();
+        updateScaleFactor();
+        updateVideoPositions();
 
         startVoiceRecognition();
-
         processFrames();
-
-        // Position sliders
-        updateVideoPositions();
+        updateFilterState();
+        adjustLayout();
       }
-
       init();
 
-      //--- Enumerate Cameras -------------------------------------------------
+      //--- Enumerate Devices -------------------------------------------------
       async function getVideoDevices() {
         const devices = await navigator.mediaDevices.enumerateDevices();
         videoDevices = devices.filter(d => d.kind === 'videoinput');
@@ -267,7 +329,6 @@
           stream.getTracks().forEach(t => t.stop());
         }
 
-        // Gather constraints
         const frameRate = parseInt(frameRateSlider.value);
         const [width, height] = resolutionSelect.value.split('x').map(Number);
 
@@ -318,7 +379,7 @@
         }
       }
 
-      //--- Filters -----------------------------------------------------------
+      //--- FILTER LOOP -------------------------------------------------------
       function processFrames() {
         if (filterMode === 1) {
           // Motion filter
@@ -329,35 +390,36 @@
           processUfoFrame(video1, canvas1, ctx1);
           processUfoFrame(video2, canvas2, ctx2);
         }
-        // If filterMode=0, just let videos display normally
         requestAnimationFrame(processFrames);
       }
 
-      //---------------- MOTION FILTER ----------------
+      /*************************************************
+       * MOTION FILTER
+       *************************************************/
       function processMotionFrame(videoElement, canvasElement, ctx) {
         if (!videoElement || videoElement.readyState < 2) return;
 
-        // Offscreen is same size as the actual video feed
+        // We'll create an offscreen with "scaled" resolution
+        // to do motion detection at a lower resolution = faster
+        const scaledWidth = Math.floor(videoElement.videoWidth * scaleFactor);
+        const scaledHeight = Math.floor(videoElement.videoHeight * scaleFactor);
+
         const offscreen = document.createElement('canvas');
-        offscreen.width = videoElement.videoWidth;
-        offscreen.height = videoElement.videoHeight;
+        offscreen.width = scaledWidth;
+        offscreen.height = scaledHeight;
         const offCtx = offscreen.getContext('2d');
 
-        // Draw raw camera feed to offscreen
-        offCtx.drawImage(videoElement, 0, 0);
+        // draw raw camera feed at scaled size
+        offCtx.drawImage(videoElement, 0, 0, scaledWidth, scaledHeight);
+        const currentFrame = offCtx.getImageData(0, 0, scaledWidth, scaledHeight);
 
-        // Grab its pixel data
-        const currentFrame = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
-        let previousFrameData = videoElement.previousFrameData;
-
-        if (previousFrameData) {
+        let prevData = videoElement.previousFrameData;
+        if (prevData) {
           const data = currentFrame.data;
-          const prevData = previousFrameData.data;
           const len = data.length;
-          const threshold = 255 * (1 - sensitivity);
+          const outData = new Uint8ClampedArray(len);
 
-          // Output buffer
-          const outputData = new Uint8ClampedArray(len);
+          const threshold = 255 * (1 - sensitivity);
 
           for (let i = 0; i < len; i += 4) {
             const diffR = data[i] - prevData[i];
@@ -366,61 +428,56 @@
 
             const motionVal = Math.sqrt(diffR * diffR + diffG * diffG + diffB * diffB);
 
-            // Smoothing into prev
+            // smoothing into prev
             prevData[i]   = prevData[i]   * smoothingFactor + data[i]   * (1 - smoothingFactor);
             prevData[i+1] = prevData[i+1] * smoothingFactor + data[i+1] * (1 - smoothingFactor);
             prevData[i+2] = prevData[i+2] * smoothingFactor + data[i+2] * (1 - smoothingFactor);
 
             if (motionVal > threshold) {
-              // Amplify differences
-              outputData[i]   = clamp(data[i]   + diffR * amplificationFactor);
-              outputData[i+1] = clamp(data[i+1] + diffG * amplificationFactor);
-              outputData[i+2] = clamp(data[i+2] + diffB * amplificationFactor);
+              outData[i]   = clamp(data[i]   + diffR * amplificationFactor);
+              outData[i+1] = clamp(data[i+1] + diffG * amplificationFactor);
+              outData[i+2] = clamp(data[i+2] + diffB * amplificationFactor);
             } else {
-              // Keep original
-              outputData[i]   = data[i];
-              outputData[i+1] = data[i+1];
-              outputData[i+2] = data[i+2];
+              outData[i]   = data[i];
+              outData[i+1] = data[i + 1];
+              outData[i+2] = data[i + 2];
             }
-            outputData[i+3] = 255;
+            outData[i+3] = 255;
           }
 
-          // Put final
-          const outFrame = new ImageData(outputData, offscreen.width, offscreen.height);
+          const outFrame = new ImageData(outData, scaledWidth, scaledHeight);
           offCtx.putImageData(outFrame, 0, 0);
         }
-        // Save currentFrame as previous
-        videoElement.previousFrameData = currentFrame;
+        videoElement.previousFrameData = currentFrame.data.slice();
 
-        // Now draw offscreen to actual canvas
-        ctx.drawImage(offscreen, 0, 0, canvasElement.width, canvasElement.height);
+        // scale back up to canvas size
+        ctx.drawImage(offscreen, 0, 0, scaledWidth, scaledHeight,
+                                 0, 0, canvasElement.width, canvasElement.height);
       }
 
       function clamp(v) {
         return Math.max(0, Math.min(255, v));
       }
 
-      //---------------- UFO FILTER ----------------
+      /*************************************************
+       * UFO FILTER (single brightest pixel)
+       *************************************************/
       function processUfoFrame(videoElement, canvasElement, ctx) {
         if (!videoElement || videoElement.readyState < 2) return;
 
-        // 1) Make an offscreen canvas the size of the actual video feed
+        // Full-resolution offscreen
         const offscreen = document.createElement('canvas');
         offscreen.width = videoElement.videoWidth;
         offscreen.height = videoElement.videoHeight;
         const offCtx = offscreen.getContext('2d');
 
-        // 2) Draw the raw camera feed onto the offscreen (unaltered)
         offCtx.drawImage(videoElement, 0, 0);
-
-        // 3) Read its pixels
         const frameData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
 
         let brightestVal = -1;
         let brightestX = 0;
         let brightestY = 0;
 
-        // 4) Find the single brightest pixel
         const len = frameData.data.length;
         for (let i = 0; i < len; i += 4) {
           const r = frameData.data[i];
@@ -429,50 +486,40 @@
           const bright = (r + g + b) / 3;
           if (bright > brightestVal) {
             brightestVal = bright;
-            // index to x,y:
-            let pixelIndex = i / 4;
-            brightestX = pixelIndex % offscreen.width;
-            brightestY = Math.floor(pixelIndex / offscreen.width);
+            let pxIndex = i / 4;
+            brightestX = pxIndex % offscreen.width;
+            brightestY = Math.floor(pxIndex / offscreen.width);
           }
         }
 
-        // If nothing bright, just show the raw feed
         if (brightestVal < 0) {
+          // no bright pixel
           ctx.drawImage(offscreen, 0, 0, canvasElement.width, canvasElement.height);
           return;
         }
 
-        // 5) Smooth the center
+        // smooth center
         const targetXNorm = brightestX / offscreen.width;
         const targetYNorm = brightestY / offscreen.height;
         ufoCenterX = ufoCenterX * ufoSmoothing + targetXNorm * (1 - ufoSmoothing);
         ufoCenterY = ufoCenterY * ufoSmoothing + targetYNorm * (1 - ufoSmoothing);
 
-        // 6) We want to zoom in around that pixel
-        // Let's define how big the sub-rectangle is, in the source
         const zoomW = offscreen.width  / ufoDigitalZoom;
         const zoomH = offscreen.height / ufoDigitalZoom;
 
-        // We want (ufoCenterX, ufoCenterY) in the center of that sub-rect
         const left = (ufoCenterX * offscreen.width) - (zoomW / 2);
         const top  = (ufoCenterY * offscreen.height) - (zoomH / 2);
 
-        // 7) clamp the sub-rectangle
         let srcX = Math.max(0, Math.min(offscreen.width - zoomW, left));
         let srcY = Math.max(0, Math.min(offscreen.height - zoomH, top));
 
-        // 8) Draw that subregion to the final canvas
-        ctx.drawImage(
-          offscreen,
-          srcX, srcY,         // top-left in the offscreen
-          zoomW, zoomH,       // subregion size
-          0, 0,               // destination coords
-          canvasElement.width,
-          canvasElement.height
+        ctx.drawImage(offscreen,
+          srcX, srcY, zoomW, zoomH,
+          0, 0, canvasElement.width, canvasElement.height
         );
       }
 
-      //--- Voice Recognition ------------------------------------------------
+      //--- VOICE -------------------------------------------------------------
       function startVoiceRecognition() {
         if ('webkitSpeechRecognition' in window) {
           recognition = new webkitSpeechRecognition();
@@ -487,16 +534,18 @@
         recognition.continuous = true;
         recognition.interimResults = false;
 
-        recognition.onresult = event => {
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-              const cmd = event.results[i][0].transcript.trim().toLowerCase();
-              processVoiceCommand(cmd);
+        recognition.onresult = function(e) {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) {
+              const command = e.results[i][0].transcript.trim().toLowerCase();
+              processVoiceCommand(command);
             }
           }
         };
-        recognition.onerror = e => console.error('Speech error:', e.error);
-        recognition.onend = () => {
+        recognition.onerror = function(evt) {
+          console.error('Voice error:', evt.error);
+        };
+        recognition.onend = function() {
           if (!isMenuVisible) recognition.start();
         };
 
@@ -512,21 +561,22 @@
       }
 
       function processVoiceCommand(command) {
-        console.log('Heard:', command);
+        console.log('Voice cmd:', command);
 
-        // Possibly replace number words
-        command = command.replace(/\bone\b/g, '1')
-                         .replace(/\btwo\b/g, '2')
-                         .replace(/\bthree\b/g, '3')
-                         .replace(/\bfour\b/g, '4')
-                         .replace(/\bfive\b/g, '5')
-                         .replace(/\bsix\b/g, '6')
-                         .replace(/\bseven\b/g, '7')
-                         .replace(/\beight\b/g, '8')
-                         .replace(/\bnine\b/g, '9')
-                         .replace(/\bten\b/g, '10');
+        // optional number word replacements
+        command = command
+          .replace(/\bone\b/g, '1')
+          .replace(/\btwo\b/g, '2')
+          .replace(/\bthree\b/g, '3')
+          .replace(/\bfour\b/g, '4')
+          .replace(/\bfive\b/g, '5')
+          .replace(/\bsix\b/g, '6')
+          .replace(/\bseven\b/g, '7')
+          .replace(/\beight\b/g, '8')
+          .replace(/\bnine\b/g, '9')
+          .replace(/\bten\b/g, '10');
 
-        // "enable filter 1" or "enable filter 2" or "disable filter"
+        // Filter commands: "enable filter 1" or "enable filter 2" or "disable filter"
         const filterMatch = command.match(/(enable|disable)\s*filter\s*(\d*)/);
         if (filterMatch) {
           const action = filterMatch[1];
@@ -534,13 +584,12 @@
           if (action === 'disable') {
             filterMode = 0;
           } else {
-            // "enable"
+            // enable
             if (filterNum === 1) {
               filterMode = 1; // motion
             } else if (filterNum === 2) {
               filterMode = 2; // UFO
-              // reset UFO defaults so it starts fresh
-              ufoDigitalZoom = 3.0;
+              ufoDigitalZoom = 3.0; // reset UFO defaults
               ufoCenterX = 0.5;
               ufoCenterY = 0.5;
             } else {
@@ -555,17 +604,43 @@
           return;
         }
 
-        // "push" / "pull" if UFO
+        // "take picture"
+        if (command.includes('take picture')) {
+          takePicture();
+          return;
+        }
+
+        // If UFO filter is on, "push"/"pull" for zoom
         if (filterMode === 2) {
           if (command.includes('push')) {
-            ufoDigitalZoom *= 1.25; // zoom in
+            // zoom in
+            ufoDigitalZoom *= 1.25;
             return;
           }
           if (command.includes('pull')) {
-            ufoDigitalZoom /= 1.25; // zoom out
+            // zoom out
+            ufoDigitalZoom /= 1.25;
             if (ufoDigitalZoom < 1) ufoDigitalZoom = 1;
             return;
           }
+        }
+
+        // motion filter intensity/sensitivity
+        const intensityMatch = command.match(/intensity\s*(\d+)/);
+        if (intensityMatch) {
+          const ival = parseInt(intensityMatch[1]);
+          if (ival >= 0 && ival <= 100) {
+            amplificationFactor = ival;
+          }
+          return;
+        }
+        const sensMatch = command.match(/sensitivity\s*(\d+)/);
+        if (sensMatch) {
+          const sval = parseInt(sensMatch[1]);
+          if (sval >= 0 && sval <= 100) {
+            sensitivity = sval / 100;
+          }
+          return;
         }
 
         // "frame rate 30"
@@ -584,16 +659,18 @@
           flipCamera();
           return;
         }
+
         // "cycle camera"
         if (command.includes('cycle camera') || command.includes('cycle cam')) {
           cycleCamera();
           return;
         }
+
         // "switch to cam x"
         const switchMatch = command.match(/switch to cam\s*(\d+)/);
         if (switchMatch) {
-          const num = parseInt(switchMatch[1]);
-          if (!isNaN(num)) switchToCameraByName(`Cam ${num}`);
+          const cnum = parseInt(switchMatch[1]);
+          switchToCameraByName(`Cam ${cnum}`);
           return;
         }
 
@@ -617,6 +694,7 @@
           }
           return;
         }
+
         // "contrast 15"
         const contrastMatch = command.match(/contrast\s*(\d+)/);
         if (contrastMatch) {
@@ -627,28 +705,45 @@
           }
           return;
         }
-
-        // motion filter intensity
-        const intensityMatch = command.match(/intensity\s*(\d+)/);
-        if (intensityMatch) {
-          const ival = parseInt(intensityMatch[1]);
-          if (ival >= 0 && ival <= 100) {
-            amplificationFactor = ival;
-          }
-          return;
-        }
-        // motion filter sensitivity
-        const sensMatch = command.match(/sensitivity\s*(\d+)/);
-        if (sensMatch) {
-          const sval = parseInt(sensMatch[1]);
-          if (sval >= 0 && sval <= 100) {
-            sensitivity = sval / 100;
-          }
-          return;
-        }
       }
 
-      //--- UI Update ---------------------------------------------------------
+      //--- TAKE PICTURE ------------------------------------------------------
+      function takePicture() {
+        // We'll combine canvas1 and canvas2 side by side into a single snapshot
+        // that matches the final user view (left half, right half).
+
+        // Both canvases are presumably the same height, so let's do:
+        const w = canvas1.width + canvas2.width;
+        const h = Math.max(canvas1.height, canvas2.height);
+
+        // Create an offscreen to combine them
+        const combined = document.createElement('canvas');
+        combined.width = w;
+        combined.height = h;
+        const cctx = combined.getContext('2d');
+
+        // Draw left canvas at [0,0]
+        cctx.drawImage(canvas1, 0, 0, canvas1.width, canvas1.height);
+
+        // Draw right canvas at [canvas1.width, 0]
+        cctx.drawImage(canvas2, canvas1.width, 0, canvas2.width, canvas2.height);
+
+        // Generate a random file name
+        const randomName = 'snapshot_' + Math.random().toString(36).slice(2, 10) + '.png';
+
+        // Convert to dataURL
+        const url = combined.toDataURL('image/png');
+
+        // Create an <a> link to force a download
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = randomName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      //--- UI / Filter States -----------------------------------------------
       function updateFilterState() {
         if (filterMode === 0) {
           // no filter
@@ -659,18 +754,16 @@
           video1.previousFrameData = null;
           video2.previousFrameData = null;
         } else {
-          // hide original, show canvas
           video1.style.visibility = 'hidden';
           video2.style.visibility = 'hidden';
           canvas1.style.display = 'block';
           canvas2.style.display = 'block';
-          // reset prev data
           video1.previousFrameData = null;
           video2.previousFrameData = null;
         }
       }
 
-      //--- General Camera & UI -----------------------------------------------
+      //--- Camera / Layout ---------------------------------------------------
       function flipCamera() {
         isFrontCamera = !isFrontCamera;
         currentZoom = 1;
@@ -696,8 +789,8 @@
       }
 
       async function switchToCameraByName(camName) {
-        const camNumber = parseInt(camName.replace('Cam ', ''));
-        const idx = camNumber - 1;
+        const n = parseInt(camName.replace('Cam ', ''));
+        const idx = n - 1;
         if (idx >= 0 && idx < videoDevices.length) {
           currentCameraToggleIndex = idx;
           await restartCamera();
@@ -711,6 +804,7 @@
         await restartCamera();
       }
 
+      //--- Sliders -----------------------------------------------------------
       function updateFrameRate() {
         frameRateValue.textContent = `${frameRateSlider.value} fps`;
         restartCamera();
@@ -725,22 +819,37 @@
         contrastValue.textContent = c;
       }
 
-      // Positioning
-      function updateVideoPositions() {
-        video1.style.transform = `translate(${leftX.value}px, ${leftY.value}px)`;
-        video2.style.transform = `translate(${rightX.value}px, ${rightY.value}px)`;
-        canvas1.style.transform = `translate(${leftX.value}px, ${leftY.value}px)`;
-        canvas2.style.transform = `translate(${rightX.value}px, ${rightY.value}px)`;
+      function updateScaleFactor() {
+        const val = parseInt(scaleFactorSlider.value);
+        scaleFactor = val / 100;
+        scaleFactorValue.textContent = `${val}%`;
+
+        video1.previousFrameData = null;
+        video2.previousFrameData = null;
       }
 
-      //--- Touch Zoom Logic --------------------------------------------------
+      function updateVideoPositions() {
+        video1.style.transform = `translate(${leftX.value}px, ${leftY.value}px)`;
+        canvas1.style.transform = `translate(${leftX.value}px, ${leftY.value}px)`;
+
+        video2.style.transform = `translate(${rightX.value}px, ${rightY.value}px)`;
+        canvas2.style.transform = `translate(${rightX.value}px, ${rightY.value}px)`;
+
+        leftXValue.textContent = leftX.value;
+        leftYValue.textContent = leftY.value;
+        rightXValue.textContent = rightX.value;
+        rightYValue.textContent = rightY.value;
+      }
+
+      //--- Touch (zoom) / Menu toggles ---------------------------------------
       function handleTouchStart(e) {
         if (e.touches.length === 2) {
           initialPinchDistance = getPinchDistance(e.touches);
         } else if (e.touches.length === 1) {
+          // single tap => check for double-tap
           const now = Date.now();
           if (handleTouchStart.last && (now - handleTouchStart.last) < 300) {
-            // double tap
+            // double tap => toggle menu
             toggleMenu();
           }
           handleTouchStart.last = now;
@@ -774,19 +883,25 @@
         return Math.hypot(dx, dy);
       }
 
-      //--- Show/Hide Menu ----------------------------------------------------
       function toggleMenu() {
         isMenuVisible = !isMenuVisible;
         menu.style.display = isMenuVisible ? 'block' : 'none';
 
-        if (isMenuVisible) {
-          stopVoiceRecognition();
+        if (isMenuVisible) stopVoiceRecognition();
+        else startVoiceRecognition();
+      }
+
+      //--- Orientation & Fullscreen ------------------------------------------
+      window.addEventListener('resize', adjustLayout);
+      function adjustLayout() {
+        const container = document.getElementById('videoContainer');
+        if (window.innerWidth > window.innerHeight) {
+          container.style.flexDirection = 'row';
         } else {
-          startVoiceRecognition();
+          container.style.flexDirection = 'column';
         }
       }
 
-      //--- Full-Screen Toggle ------------------------------------------------
       const fullscreenOverlay = document.getElementById('fullscreenOverlay');
       fullscreenOverlay.addEventListener('click', function() {
         if (document.fullscreenElement) {
@@ -799,18 +914,6 @@
           }
         }
       });
-
-      //--- Orientation Layout ------------------------------------------------
-      window.addEventListener('resize', adjustLayout);
-      function adjustLayout() {
-        const container = document.getElementById('videoContainer');
-        if (window.innerWidth > window.innerHeight) {
-          container.style.flexDirection = 'row';
-        } else {
-          container.style.flexDirection = 'column';
-        }
-      }
-      adjustLayout();
 
     })();
   </script>
